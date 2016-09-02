@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import requests
 import six
 
+from django import forms
 from django.conf.urls import url
 from rest_framework.response import Response
 from six.moves.urllib.parse import urlencode
@@ -219,11 +220,18 @@ class GitHubPlugin(IssuePlugin2):
 
         return Response({field: issues})
 
-    def get_configure_plugin_fields(self, request, project, **kwargs):
+    def validate_repo(self, value, project, actor, **kwargs):
+        url = 'https://api.github.com/repos/{}'.format(value)
+        req = self.make_api_request(actor, url)
+        if req.status_code != 200:
+            raise forms.ValidationError('The repository entered was not found or you do not have access to it.')
+        return value
+
+    def get_config(self, project, **kwargs):
         return [{
             'name': 'repo',
             'label': 'Repository Name',
-            'default': self.get_option('repo', project),
+            'validators': [self.validate_repo],
             'type': 'text',
             'placeholder': 'e.g. getsentry/sentry',
             'help': 'Enter your repository name, including the owner.'
