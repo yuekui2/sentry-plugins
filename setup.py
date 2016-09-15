@@ -96,12 +96,14 @@ setup(
             'pivotal = sentry_plugins.pivotal',
             'hipchat_ac = sentry_plugins.hipchat_ac',
             'jira_ac = sentry_plugins.jira_ac',
+            'vsts = sentry_plugins.vsts',
         ],
         'sentry.plugins': [
             'github = sentry_plugins.github.plugin:GitHubPlugin',
             'pivotal = sentry_plugins.pivotal.plugin:PivotalPlugin',
             'hipchat_ac = sentry_plugins.hipchat_ac.plugin:HipchatPlugin',
-            'jira_ac = sentry_plugins.jira_ac.plugin:JiraACPlugin'
+            'jira_ac = sentry_plugins.jira_ac.plugin:JiraACPlugin',
+            'vsts = sentry_plugins.vsts.plugin:VisualStudioPlugin',
         ],
     },
     classifiers=[
