@@ -412,7 +412,7 @@ class JiraPlugin(CorePluginMixin, IssuePlugin2):
                     if meta:
                         issue_type_choices = self.make_choices(meta['issuetypes'])
 
-        return [{
+        config = [{
             'name': 'instance_url',
             'label': 'JIRA Instance URL',
             'default': instance,
@@ -445,7 +445,6 @@ class JiraPlugin(CorePluginMixin, IssuePlugin2):
             'type': 'textarea',
             'required': False,
             'placeholder': 'e.g. "components, security, customfield_10006"',
-            'default': self.get_option('ignored_fields', project) or '',
             'help': 'Comma-separated list of properties that you don\'t want to show in the form'
         }, {
             'name': 'default_priority',
@@ -453,22 +452,24 @@ class JiraPlugin(CorePluginMixin, IssuePlugin2):
             'type': 'select',
             'choices': priority_choices,
             'required': False,
-            'default': self.get_option('default_priority', project)
         }, {
             'name': 'default_issue_type',
             'label': 'Default Issue Type',
             'type': 'select',
             'choices': issue_type_choices,
             'required': False,
-            'default': self.get_option('default_issue_type', project)
-        }, {
-            'name': 'auto_create',
-            'label': 'Automatically create JIRA Tickets',
-            'default': self.get_option('auto_create', project) or False,
-            'type': 'bool',
-            'required': False,
-            'help': 'Automatically create a JIRA ticket for EVERY new issue'
         }]
+
+        if self.get_option('auto_create', project):
+            config.append({
+                'name': 'auto_create',
+                'label': 'Automatically create JIRA Tickets',
+                'type': 'bool',
+                'required': False,
+                'help': 'Automatically create a JIRA ticket for EVERY new issue'
+            })
+
+        return config
 
     def should_create(self, group, event, is_new):
         if not is_new:
@@ -486,32 +487,57 @@ class JiraPlugin(CorePluginMixin, IssuePlugin2):
         return True
 
     def post_process(self, group, event, is_new, is_sample, **kwargs):
+        # This feature is deprecated, and rules should be used instead.
         if not self.should_create(group, event, is_new):
             return
 
-        fields = self.get_new_issue_fields(None, group, event, **kwargs)
+        return self.create_issue_from_automation(event)
+
+    def get_rules(self, **kwargs):
+        from .rules import CreateJIRAIssueAction
+        return [CreateJIRAIssueAction]
+
+    def create_issue_from_automation(self, event, **kwargs):
+        group = event.group
+        fields = self.get_new_issue_fields(None, group, event)
 
         post_data = {}
-        included_fields = set(['priority', 'issuetype', 'title', 'description', 'project'])
+        included_fields = set([
+            'priority',
+            'issuetype',
+            'title',
+            'description',
+            'project'
+        ])
         for field in fields:
             name = field['name']
             if name in included_fields:
                 post_data[name] = field.get('default')
 
-        if not (post_data.get('priority') and post_data.get('issuetype') and post_data.get('project')):
+        if not (
+            post_data.get('priority') and
+            post_data.get('issuetype') and
+            post_data.get('project')
+        ):
             return
 
         interface = event.interfaces.get('sentry.interfaces.Exception')
 
         if interface:
-            post_data['description'] += '\n{code}%s{code}' % interface.get_stacktrace(event, system_frames=False,
-                                                                                      max_frames=settings.SENTRY_MAX_STACKTRACE_FRAMES)
+            post_data['description'] += u'\n{code}%s{code}' % (
+                interface.get_stacktrace(
+                    event=event,
+                    system_frames=False,
+                    max_frames=settings.SENTRY_MAX_STACKTRACE_FRAMES,
+                ),
+            )
 
         try:
             issue_id = self.create_issue(
                 request={},
                 group=group,
-                form_data=post_data)
+                form_data=post_data
+            )
         except PluginError as e:
             logging.exception('Error creating JIRA ticket: %s', e)
         else:
