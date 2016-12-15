@@ -108,6 +108,7 @@ setup(
             'pushover = sentry_plugins.pushover',
             'segment = sentry_plugins.segment',
             'slack = sentry_plugins.slack',
+            'splunk = sentry_plugins.splunk',
             'victorops = sentry_plugins.victorops',
         ],
         'sentry.plugins': [
@@ -123,6 +124,7 @@ setup(
             'pushover = sentry_plugins.pushover.plugin:PushoverPlugin',
             'segment = sentry_plugins.segment.plugin:SegmentPlugin',
             'slack = sentry_plugins.slack.plugin:SlackPlugin',
+            'splunk = sentry_plugins.splunk.plugin:SplunkPlugin',
             'victorops = sentry_plugins.victorops.plugin:VictorOpsPlugin',
         ],
     },

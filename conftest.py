@@ -26,6 +26,7 @@ def pytest_configure(config):
         'sentry_plugins.jira',
         'sentry_plugins.segment',
         'sentry_plugins.slack',
+        'sentry_plugins.splunk',
         'sentry_plugins.victorops',
     )
 
@@ -42,6 +43,7 @@ def pytest_configure(config):
     from sentry_plugins.pushover.plugin import PushoverPlugin
     from sentry_plugins.segment.plugin import SegmentPlugin
     from sentry_plugins.slack.plugin import SlackPlugin
+    from sentry_plugins.splunk.plugin import SplunkPlugin
     from sentry_plugins.victorops.plugin import VictorOpsPlugin
     plugins.register(AsanaPlugin)
     plugins.register(BitbucketPlugin)
@@ -54,6 +56,7 @@ def pytest_configure(config):
     plugins.register(PushoverPlugin)
     plugins.register(SegmentPlugin)
     plugins.register(SlackPlugin)
+    plugins.register(SplunkPlugin)
     plugins.register(VictorOpsPlugin)
 
     settings.ASANA_CLIENT_ID = 'abc'
