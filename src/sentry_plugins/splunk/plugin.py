@@ -27,6 +27,9 @@ class SplunkPlugin(CorePluginMixin, Plugin):
     description = 'Send Sentry events into Splunk.'
     conf_key = 'splunk'
 
+    def has_project_conf(self):
+        return True
+
     def get_plugin_type(self):
         return 'data-forwarding'
 
