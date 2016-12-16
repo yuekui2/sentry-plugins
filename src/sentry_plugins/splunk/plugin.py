@@ -3,6 +3,7 @@ from __future__ import absolute_import
 from sentry import http
 from sentry.app import ratelimiter
 from sentry.plugins.base import Plugin
+from sentry.plugins.base.configuration import react_plugin_config
 from sentry.utils.hashlib import md5_text
 
 from sentry_plugins.base import CorePluginMixin
@@ -26,6 +27,9 @@ class SplunkPlugin(CorePluginMixin, Plugin):
     slug = 'splunk'
     description = 'Send Sentry events into Splunk.'
     conf_key = 'splunk'
+
+    def configure(self, project, request):
+        return react_plugin_config(self, project, request)
 
     def has_project_conf(self):
         return True
