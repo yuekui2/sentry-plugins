@@ -23,6 +23,7 @@ def pytest_configure(config):
         'sentry_plugins.pagerduty',
         'sentry_plugins.pivotal',
         'sentry_plugins.pushover',
+        'sentry_plugins.itunesconnect',
         'sentry_plugins.jira',
         'sentry_plugins.segment',
         'sentry_plugins.slack',
@@ -36,6 +37,7 @@ def pytest_configure(config):
     from sentry_plugins.github.plugin import GitHubPlugin
     from sentry_plugins.gitlab.plugin import GitLabPlugin
     from sentry_plugins.hipchat_ac.plugin import HipchatPlugin
+    from sentry_plugins.itunesconnect.plugin import ItunesConnectPlugin
     from sentry_plugins.jira.plugin import JiraPlugin
     from sentry_plugins.pagerduty.plugin import PagerDutyPlugin
     from sentry_plugins.pivotal.plugin import PivotalPlugin
@@ -48,6 +50,7 @@ def pytest_configure(config):
     plugins.register(GitHubPlugin)
     plugins.register(GitLabPlugin)
     plugins.register(HipchatPlugin)
+    plugins.register(ItunesConnectPlugin)
     plugins.register(JiraPlugin)
     plugins.register(PagerDutyPlugin)
     plugins.register(PivotalPlugin)

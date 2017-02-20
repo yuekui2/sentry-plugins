@@ -4,6 +4,7 @@ var path = require('path'),
     webpack = require('webpack');
 
 var APPS = [
+  'itunesconnect',
   'hipchat-ac',
   'jira'
 ];
