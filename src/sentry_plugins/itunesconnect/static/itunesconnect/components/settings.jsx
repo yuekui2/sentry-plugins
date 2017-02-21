@@ -7,14 +7,30 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
 
     this.testConfig = this.testConfig.bind(this);
     this.fetchData = this.fetchData.bind(this);
+
+    Object.assign(this.state, {
+      testing: false,
+    });
   }
 
   fetchData() {
     super.fetchData();
+    this.api.request(`${this.getPluginEndpoint()}test-config/`, {
+      success: (data) => {
+        this.setState({
+          testResults: data,
+        });
+      }
+    });
   }
 
   testConfig() {
-    let isTestable = this.props.plugin.isTestable;
+    if (this.state.testing !== false) {
+      return;
+    }
+    this.setState({
+      testing: true,
+    });
     let loadingIndicator = IndicatorStore.add(i18n.t('Testing Connection..'));
     this.api.request(`${this.getPluginEndpoint()}test-config/`, {
       method: 'POST',
@@ -33,6 +49,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       },
       complete: () => {
         IndicatorStore.remove(loadingIndicator);
+        this.setState({
+          testing: false,
+        });
       }
     });
   }
@@ -68,6 +87,11 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       showTest = false;
     }
 
+    let cachedResult = false;
+    if (this.state.testResults) {
+      cachedResult = this.state.testResults.cached;
+    }
+
     return (
       <div className="box dashboard-widget">
         <div className="box-header clearfix">
@@ -87,13 +111,16 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
                   })}
                 </ul>
               }
-              {!showTest &&
-                <div className="group-list-empty">
-                    <a className="btn btn-default btn-sm" onClick={this.testConfig}>
-                      {i18n.t('Test')}
-                    </a>
-                </div>
-              }
+              <div className="group-list-empty">
+                <a className="btn btn-default btn-sm"
+                  onClick={this.testConfig}
+                  disabled={this.state.testing}>
+                  {cachedResult ?
+                    i18n.t('Refresh') :
+                    i18n.t('Test connection')
+                  }
+                </a>
+              </div>
           </div>
         </div>
       </div>
@@ -111,14 +138,10 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
 
         {this.state.testResults &&
           <div className="ref-itunesconnect-test-results">
-            <h4>Test Results</h4>
-            {this.state.testResults.error ?
+            {this.state.testResults.error &&
               <div className="alert alert-block alert-error">
                 {this.state.testResults.message}
-              </div>
-            :
-              <div className="alert alert-block alert-success">
-                {this.state.testResults.message}
+                <pre>{this.state.testResults.exception}</pre>
               </div>
             }
           </div>
