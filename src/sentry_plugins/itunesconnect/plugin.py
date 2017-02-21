@@ -1,12 +1,16 @@
 from __future__ import absolute_import
 
+from datetime import timedelta
 from django.conf import settings
+from django import forms
 from django.core.urlresolvers import reverse
+from django.core.cache import cache
 from six.moves.urllib.parse import urlparse, quote
 
 from sentry import options
 from sentry.plugins import plugins
-from sentry.plugins.bases.notify import NotifyPlugin
+from sentry.plugins.base.v1 import Plugin
+from sentry.plugins.base.configuration import react_plugin_config
 from sentry_plugins.utils import get_secret_field_config
 
 from sentry_plugins.base import CorePluginMixin
@@ -14,7 +18,7 @@ from .client import ItunesConnectClient
 from .endpoints.test_config import ItunesConnectTestConfigEndpoint
 
 
-class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
+class ItunesConnectPlugin(CorePluginMixin, Plugin):
     description = 'iTunes Connect Debug symbols sync service.'
     slug = 'itunesconnect'
     title = 'iTunes Connect'
@@ -25,6 +29,24 @@ class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
     assets = [
         'dist/itunesconnect.js',
     ]
+
+    def get_itc_response_cache_key(self, project):
+        return 'itc-response:%s' % (project.id)
+
+    def get_itc_client_cache_key(self, project):
+        return 'itc-client:%s' % (project.id)
+
+    def configure(self, project, request):
+        return react_plugin_config(self, project, request)
+
+    def get_plugin_type(self):
+        return 'task-runner'
+
+    def can_enable_for_projects(self):
+        return True
+
+    def has_project_conf(self):
+        return True
 
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
@@ -41,7 +63,23 @@ class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
         ]
 
     def test_configuration(self, project):
-        return self.get_client(project=project).to_json()
+        cache_key = self.get_itc_client_cache_key(project)
+        cached_client = cache.get(cache_key)
+        if cached_client:
+            return ItunesConnectClient.from_json(cached_client)
+        client = self.get_client(project=project)
+        cache.set(cache_key, client.to_json(), 3600)
+        return client
+
+    def get_task(self):
+        # 'schedule': timedelta(minutes=15),
+        return {'sync-dsyms-from-itunes-connect': {
+            'task': 'sentry.tasks.sync_dsyms_from_itunes_connect',
+            'schedule': timedelta(seconds=30),
+            'options': {
+                'expires': 300,
+            },
+        }}
 
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)

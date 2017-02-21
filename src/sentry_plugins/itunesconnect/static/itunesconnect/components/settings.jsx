@@ -80,18 +80,12 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   renderUserDetails() {
-    let showTest = true;
-    if (!this.state.testResults ||
-      this.state.testResults.error === true &&
-      this.state.testResults.result === null) {
-      showTest = false;
-    }
-
+    let hasResult = false;
     let cachedResult = false;
-    if (this.state.testResults) {
+    if (this.state.testResults && this.state.testResults.result) {
       cachedResult = this.state.testResults.cached;
+      hasResult = true;
     }
-
     return (
       <div className="box dashboard-widget">
         <div className="box-header clearfix">
@@ -104,7 +98,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
         </div>
         <div className="box-content">
           <div className="tab-pane active">
-              {showTest &&
+              {hasResult &&
                 <ul className="group-list group-list-small">
                   {this.state.testResults.result.teams.map((team) => {
                       return this.renderTeam(team);
