@@ -11,6 +11,7 @@ from sentry_plugins.utils import get_secret_field_config
 
 from sentry_plugins.base import CorePluginMixin
 from .client import ItunesConnectClient
+from .endpoints.test_config import ItunesConnectTestConfigEndpoint
 
 
 class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
@@ -25,7 +26,7 @@ class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
         'dist/itunesconnect.js',
     ]
 
-    def is_configured(self, request, project, **kwargs):
+    def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
     def get_client(self, project):
@@ -33,6 +34,14 @@ class ItunesConnectPlugin(CorePluginMixin, NotifyPlugin):
             email=self.get_option('email', project),
             password=self.get_option('password', project),
         )
+
+    def get_project_urls(self):
+        return [
+            (r'^test-config/', ItunesConnectTestConfigEndpoint.as_view(plugin=self)),
+        ]
+
+    def test_configuration(self, project):
+        return self.get_client(project=project).to_json()
 
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)
