@@ -71,16 +71,6 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         cache.set(cache_key, client.to_json(), 3600)
         return client
 
-    def get_task(self):
-        # 'schedule': timedelta(minutes=15),
-        return {'sync-dsyms-from-itunes-connect': {
-            'task': 'sentry.tasks.sync_dsyms_from_itunes_connect',
-            'schedule': timedelta(seconds=30),
-            'options': {
-                'expires': 300,
-            },
-        }}
-
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)
         secret_field = get_secret_field_config(password,
@@ -98,4 +88,21 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             'required': True,
             'help': 'Enter the email of the iTunes Connect user.'
         }, secret_field]
+
+    def get_celerybeat_schedule(self):
+        # 'schedule': timedelta(minutes=15),
+        return {'sync-dsyms-from-itunes-connect': {
+            'task': 'sentry.tasks.sync_dsyms_from_itunes_connect',
+            'schedule': timedelta(seconds=30),
+            'options': {
+                'expires': 300,
+            },
+        }}
+
+    def get_celery_imports(self):
+        return ('sentry_plugins.itunesconnect.tasks.itunesconnect')
+
+    def get_celery_queues(self):
+        # [0] == name, [1] == routing_key
+        return [('itunesconnect', 'itunesconnect')]
 
