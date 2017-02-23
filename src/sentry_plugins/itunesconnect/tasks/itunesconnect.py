@@ -22,9 +22,9 @@ def get_project_from_id(project_id):
     return Project.objects.get(id=project_id)
 
 
-def get_itunes_connect_plugin():
+def get_itunes_connect_plugin(project):
     from sentry.plugins import plugins
-    for plugin in plugins:
+    for plugin in plugins.for_project(project, version=1):
         if plugin.slug == 'itunesconnect':
             return plugin
     return None
@@ -36,27 +36,23 @@ def get_itunes_connect_plugin():
 def sync_dsyms_from_itunes_connect(**kwargs):
     options = ProjectOption.objects.filter(
         key__in=[
-            'itunesconnect:enabled',
-            'itunesconnect:email',
-            'itunesconnect:password',
+            'itunesconnect:enabled'
         ],
     )
-    plugin = get_itunes_connect_plugin()
     for opt in options:
         project = get_project_from_id(opt.project_id)
+        plugin = get_itunes_connect_plugin(project)
 
-        if not plugin.is_configured(project) or not plugin.is_enabled():
+        if (plugin and
+                (not plugin.is_configured(project) or not plugin.is_enabled())):
             logger.warning('Plugin %r for project %r is not configured', plugin, project)
             return
 
-        prev_timeout = settings.SENTRY_SOURCE_FETCH_TIMEOUT
-        settings.SENTRY_SOURCE_FETCH_TIMEOUT = FETCH_TIMEOUT
         itc = plugin.get_client(project)
         for app in itc.iter_apps():
             App.objects.create_or_update(app=app, project=project)
             for build in itc.iter_app_builds(app['id']):
                 fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
-        settings.SENTRY_SOURCE_FETCH_TIMEOUT = prev_timeout
     return
 
 
@@ -65,7 +61,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
     queue='itunesconnect')
 def fetch_dsym_url(project_id, app, build, **kwargs):
     project = get_project_from_id(project_id)
-    plugin = get_itunes_connect_plugin()
+    plugin = get_itunes_connect_plugin(project)
     itc = plugin.get_client(project)
 
     app_object = App.objects.filter(
@@ -77,14 +73,12 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
         return
 
     dsym_files = DSymFile.objects.filter(
-        app=app_object
-    )
+        app=app_object,
+        build=build['build_id']
+    ).first()
 
-    builds_to_fetch = []
-    for dsym_file in dsym_files:
-        if dsym_file.build == build['build_id']:
-            import pprint; pprint.pprint('we bail out here because we synced this already')
-            return # we bail out here because we synced this already
+    if dsym_files:
+        return # we bail out here because we synced this already
 
     url = itc.get_dsym_url(app['id'], build['platform'], build['version'], build['build_id'])
     import pprint; pprint.pprint(url)
@@ -99,23 +93,24 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
 
     # We bump the timeout and reset it after the download
     # itc is kind of slow
-    prev_timeout = settings.SENTRY_SOURCE_FETCH_TIMEOUT
-    settings.SENTRY_SOURCE_FETCH_TIMEOUT = FETCH_TIMEOUT
-    result = http.stream_download_binary(url=url, cache_enabled=False)
-    settings.SENTRY_SOURCE_FETCH_TIMEOUT = prev_timeout
+    prev_timeout = settings.SENTRY_FETCH_TIMEOUT
+    settings.SENTRY_FETCH_TIMEOUT = FETCH_TIMEOUT
+    result = http.fetch_file(url=url, cache_enabled=False)
+    settings.SENTRY_FETCH_TIMEOUT = prev_timeout
 
     temp = tempfile.TemporaryFile()
     try:
         temp.write(result.body)
         dsym_project_files = create_files_from_macho_zip(temp, project=project)
         for dsym_project_file in dsym_project_files:
-            dsym = DSymFile.objects.filter(dsym_file=dsym_project_file).first()
-            if dsym is None:
+            try:
                 DSymFile.objects.create(
                     dsym_file=dsym_project_file,
                     app=app_object,
                     build=build['build_id'],
                     version=build['version'],
                 )
+            except IntegrityError:
+                pass
     finally:
         temp.close()

@@ -11,12 +11,15 @@ class DSymFile(BaseModel):
     __core__ = False
 
     objects = BaseManager()
-    dsym_file = FlexibleForeignKey('sentry.projectdsymfile', unique=True)
+    dsym_file = FlexibleForeignKey('sentry.projectdsymfile')
     app = FlexibleForeignKey('itunesconnect.App')
-    version = models.CharField(max_length=100)
-    build = models.CharField(max_length=100)
+    version = models.CharField(max_length=32)
+    build = models.CharField(max_length=32)
     date_added = models.DateTimeField(default=timezone.now)
 
+    class Meta:
+        app_label = 'itunesconnect'
+        unique_together = (('dsym_file', 'version', 'build'),)
 
 class AppManager(BaseManager):
 
@@ -50,3 +53,6 @@ class App(BaseModel):
     # bundle_id = models.CharField(max_length=200, null=True)
     last_synced = models.DateTimeField(default=timezone.now)
     date_added = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        app_label = 'itunesconnect'

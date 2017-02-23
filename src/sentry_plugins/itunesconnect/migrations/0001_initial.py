@@ -11,13 +11,16 @@ class Migration(SchemaMigration):
         # Adding model 'DSymFile'
         db.create_table(u'itunesconnect_dsymfile', (
             (u'id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
-            ('dsym_file', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.ProjectDSymFile'], unique=True)),
+            ('dsym_file', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.ProjectDSymFile'])),
             ('app', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['itunesconnect.App'])),
-            ('version', self.gf('django.db.models.fields.CharField')(max_length=100)),
-            ('build', self.gf('django.db.models.fields.CharField')(max_length=100)),
+            ('version', self.gf('django.db.models.fields.CharField')(max_length=32)),
+            ('build', self.gf('django.db.models.fields.CharField')(max_length=32)),
             ('date_added', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
         ))
-        db.send_create_signal(u'itunesconnect', ['DSymFile'])
+        db.send_create_signal('itunesconnect', ['DSymFile'])
+
+        # Adding unique constraint on 'DSymFile', fields ['dsym_file', 'version', 'build']
+        db.create_unique(u'itunesconnect_dsymfile', ['dsym_file_id', 'version', 'build'])
 
         # Adding model 'App'
         db.create_table(u'itunesconnect_app', (
@@ -28,10 +31,13 @@ class Migration(SchemaMigration):
             ('last_synced', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
             ('date_added', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
         ))
-        db.send_create_signal(u'itunesconnect', ['App'])
+        db.send_create_signal('itunesconnect', ['App'])
 
 
     def backwards(self, orm):
+        # Removing unique constraint on 'DSymFile', fields ['dsym_file', 'version', 'build']
+        db.delete_unique(u'itunesconnect_dsymfile', ['dsym_file_id', 'version', 'build'])
+
         # Deleting model 'DSymFile'
         db.delete_table(u'itunesconnect_dsymfile')
 
@@ -40,7 +46,7 @@ class Migration(SchemaMigration):
 
 
     models = {
-        u'itunesconnect.app': {
+        'itunesconnect.app': {
             'Meta': {'object_name': 'App'},
             'app_id': ('django.db.models.fields.CharField', [], {'unique': 'True', 'max_length': '40'}),
             'data': ('jsonfield.fields.JSONField', [], {'default': '{}'}),
@@ -49,14 +55,14 @@ class Migration(SchemaMigration):
             'last_synced': ('django.db.models.fields.DateTimeField', [], {'default': 'datetime.datetime.now'}),
             'project': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Project']"})
         },
-        u'itunesconnect.dsymfile': {
-            'Meta': {'object_name': 'DSymFile'},
-            'app': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': u"orm['itunesconnect.App']"}),
-            'build': ('django.db.models.fields.CharField', [], {'max_length': '100'}),
+        'itunesconnect.dsymfile': {
+            'Meta': {'unique_together': "(('dsym_file', 'version', 'build'),)", 'object_name': 'DSymFile'},
+            'app': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['itunesconnect.App']"}),
+            'build': ('django.db.models.fields.CharField', [], {'max_length': '32'}),
             'date_added': ('django.db.models.fields.DateTimeField', [], {'default': 'datetime.datetime.now'}),
-            'dsym_file': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.ProjectDSymFile']", 'unique': 'True'}),
+            'dsym_file': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.ProjectDSymFile']"}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
-            'version': ('django.db.models.fields.CharField', [], {'max_length': '100'})
+            'version': ('django.db.models.fields.CharField', [], {'max_length': '32'})
         },
         'sentry.file': {
             'Meta': {'object_name': 'File'},
