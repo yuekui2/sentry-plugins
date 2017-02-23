@@ -11,8 +11,8 @@ class Migration(SchemaMigration):
         # Adding model 'DSymFile'
         db.create_table(u'itunesconnect_dsymfile', (
             (u'id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
-            ('dsym_file', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.ProjectDSymFile'], null=True)),
-            ('app', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['itunesconnect.App'], null=True)),
+            ('dsym_file', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.ProjectDSymFile'], unique=True)),
+            ('app', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['itunesconnect.App'])),
             ('version', self.gf('django.db.models.fields.CharField')(max_length=100)),
             ('build', self.gf('django.db.models.fields.CharField')(max_length=100)),
             ('date_added', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
@@ -51,10 +51,10 @@ class Migration(SchemaMigration):
         },
         u'itunesconnect.dsymfile': {
             'Meta': {'object_name': 'DSymFile'},
-            'app': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': u"orm['itunesconnect.App']", 'null': 'True'}),
+            'app': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': u"orm['itunesconnect.App']"}),
             'build': ('django.db.models.fields.CharField', [], {'max_length': '100'}),
             'date_added': ('django.db.models.fields.DateTimeField', [], {'default': 'datetime.datetime.now'}),
-            'dsym_file': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.ProjectDSymFile']", 'null': 'True'}),
+            'dsym_file': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.ProjectDSymFile']", 'unique': 'True'}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'version': ('django.db.models.fields.CharField', [], {'max_length': '100'})
         },

@@ -11,8 +11,8 @@ class DSymFile(BaseModel):
     __core__ = False
 
     objects = BaseManager()
-    dsym_file = FlexibleForeignKey('sentry.projectdsymfile', null=True)
-    app = FlexibleForeignKey('itunesconnect.App', null=True)
+    dsym_file = FlexibleForeignKey('sentry.projectdsymfile', unique=True)
+    app = FlexibleForeignKey('itunesconnect.App')
     version = models.CharField(max_length=100)
     build = models.CharField(max_length=100)
     date_added = models.DateTimeField(default=timezone.now)

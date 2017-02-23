@@ -14,6 +14,9 @@ from ..models import App, DSymFile
 
 logger = logging.getLogger(__name__)
 
+# Time for requests
+FETCH_TIMEOUT = 120
+
 
 def get_project_from_id(project_id):
     return Project.objects.get(id=project_id)
@@ -47,7 +50,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             return
 
         prev_timeout = settings.SENTRY_SOURCE_FETCH_TIMEOUT
-        settings.SENTRY_SOURCE_FETCH_TIMEOUT = 120
+        settings.SENTRY_SOURCE_FETCH_TIMEOUT = FETCH_TIMEOUT
         itc = plugin.get_client(project)
         for app in itc.iter_apps():
             App.objects.create_or_update(app=app, project=project)
@@ -84,12 +87,10 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
             return # we bail out here because we synced this already
 
     url = itc.get_dsym_url(app['id'], build['platform'], build['version'], build['build_id'])
-    download_dsym.delay(project_id=project_id, url=url, build=build, app_id=app_object.id)
+    import pprint; pprint.pprint(url)
+    download_dsym(project_id=project_id, url=url, build=build, app_id=app_object.id)
 
 
-@instrumented_task(
-    name='sentry.tasks.download_dsym',
-    queue='itunesconnect')
 def download_dsym(project_id, url, build, app_id, **kwargs):
     project = get_project_from_id(project_id)
     app_object = App.objects.filter(
@@ -99,8 +100,8 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
     # We bump the timeout and reset it after the download
     # itc is kind of slow
     prev_timeout = settings.SENTRY_SOURCE_FETCH_TIMEOUT
-    settings.SENTRY_SOURCE_FETCH_TIMEOUT = 120
-    result = http.stream_download_binary(url)
+    settings.SENTRY_SOURCE_FETCH_TIMEOUT = FETCH_TIMEOUT
+    result = http.stream_download_binary(url=url, cache_enabled=False)
     settings.SENTRY_SOURCE_FETCH_TIMEOUT = prev_timeout
 
     temp = tempfile.TemporaryFile()
@@ -108,11 +109,13 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
         temp.write(result.body)
         dsym_project_files = create_files_from_macho_zip(temp, project=project)
         for dsym_project_file in dsym_project_files:
-            DSymFile.objects.create(
-                dsym_file=dsym_project_file,
-                app=app_object,
-                build=build['build_id'],
-                version=build['version'],
-            )
+            dsym = DSymFile.objects.filter(dsym_file=dsym_project_file).first()
+            if dsym is None:
+                DSymFile.objects.create(
+                    dsym_file=dsym_project_file,
+                    app=app_object,
+                    build=build['build_id'],
+                    version=build['version'],
+                )
     finally:
         temp.close()
