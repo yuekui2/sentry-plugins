@@ -5,7 +5,7 @@ from six.moves.urllib.parse import urljoin
 
 from requests.utils import dict_from_cookiejar, add_dict_to_cookiejar
 
-from sentry.http import safe_urlopen, build_session
+from sentry.http import SafeSession
 
 
 BASE_URL = 'https://itunesconnect.apple.com/'
@@ -23,7 +23,7 @@ class ItcError(Exception):
 class ItunesConnectClient(object):
 
     def __init__(self, email=None, password=None):
-        self._session = build_session()
+        self._session = SafeSession()
         self._service_key = None
         self._user_details = None
         self._current_team = None
@@ -33,15 +33,15 @@ class ItunesConnectClient(object):
                 LOGIN_URL,
                 self._get_service_key(),
             )
-            rv = safe_urlopen(login_url, method='POST', json={
+            rv = self._session.post(login_url, json={
                 'accountName': email,
                 'password': password,
                 'rememberMe': False,
-            }, session=self._session)
+            })
             rv.raise_for_status()
 
             # This is necessary because it sets some further cookies
-            rv = safe_urlopen(API_BASE, method='GET', session=self._session)
+            rv = self._session.get(API_BASE)
             rv.raise_for_status()
 
     @classmethod
@@ -83,8 +83,7 @@ class ItunesConnectClient(object):
 
     def refresh_user_details(self):
         """Refreshes the user details."""
-        rv = safe_urlopen(urljoin(API_BASE, 'ra/user/detail'),
-                          method='GET', session=self._session)
+        rv = self._session.get(urljoin(API_BASE, 'ra/user/detail'))
         rv.raise_for_status()
         data = rv.json()['data']
         teams = []
@@ -126,10 +125,9 @@ class ItunesConnectClient(object):
         self._select_team(team['id'])
 
         for platform in app['platforms']:
-            rv = safe_urlopen(urljoin(
+            rv = self._session.get(urljoin(
                 API_BASE, 'ra/apps/%s/buildHistory?platform=%s' % (
-                    app_id, platform)),
-                method='GET', session=self._session)
+                    app_id, platform)))
             rv.raise_for_status()
 
             trains = rv.json()['data']['trains']
@@ -144,17 +142,16 @@ class ItunesConnectClient(object):
 
     def get_dsym_url(self, app_id, platform, version, build_id):
         """Looks up the dsym URL for a given build"""
-        rv = safe_urlopen(urljoin(
+        rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/%s/platforms/%s/trains/%s/builds/%s/details' % (
-                app_id, platform, version, build_id)),
-            method='GET', session=self._session)
+                app_id, platform, version, build_id)))
         rv.raise_for_status()
         return rv.json()['data']['dsymurl']
 
     def _get_service_key(self):
         if self._service_key is not None:
             return self._service_key
-        rv = safe_urlopen(ISK_JS_URL, method='GET', session=self._session)
+        rv = self._session.get(ISK_JS_URL)
         match = _isk_re.search(rv.text)
         if match is not None:
             self._service_key = match.group(1)
@@ -172,19 +169,18 @@ class ItunesConnectClient(object):
             return
         if ds_id is None:
             ds_id = self.get_user_details()['session']['ds_id']
-        safe_urlopen(urljoin(
+        self._session.post(urljoin(
             API_BASE, 'ra/v1/session/webSession'), json={
             'contentProviderId': team_id,
             'dsId': ds_id,
-        }, method='POST', session=self._session).raise_for_status()
+        }).raise_for_status()
         self._current_team = team_id
 
     def _list_apps(self, team_id, ds_id=None):
         self._select_team(team_id, ds_id)
 
-        rv = safe_urlopen(urljoin(
-            API_BASE, 'ra/apps/manageyourapps/summary/v2'),
-            method='GET', session=self._session)
+        rv = self._session.get(urljoin(
+            API_BASE, 'ra/apps/manageyourapps/summary/v2'))
         rv.raise_for_status()
 
         apps = rv.json()['data']['summaries']

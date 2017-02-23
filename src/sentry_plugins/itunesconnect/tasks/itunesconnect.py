@@ -80,8 +80,19 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
     if dsym_files:
         return # we bail out here because we synced this already
 
-    url = itc.get_dsym_url(app['id'], build['platform'], build['version'], build['build_id'])
-    import pprint; pprint.pprint(url)
+    url = itc.get_dsym_url(
+        app['id'],
+        build['platform'],
+        build['version'],
+        build['build_id']
+    )
+    if url is None:
+        DSymFile.objects.create(
+            app=app_object,
+            build=build['build_id'],
+            version=build['version'],
+        )
+        return
     download_dsym(project_id=project_id, url=url, build=build, app_id=app_object.id)
 
 
@@ -95,12 +106,14 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
     # itc is kind of slow
     prev_timeout = settings.SENTRY_FETCH_TIMEOUT
     settings.SENTRY_FETCH_TIMEOUT = FETCH_TIMEOUT
-    result = http.fetch_file(url=url, cache_enabled=False)
-    settings.SENTRY_FETCH_TIMEOUT = prev_timeout
-
     temp = tempfile.TemporaryFile()
     try:
-        temp.write(result.body)
+        result = http.fetch_file(
+            url=url,
+            domain_lock_enabled=False,
+            outfile=temp
+        )
+        temp.seek(0)
         dsym_project_files = create_files_from_macho_zip(temp, project=project)
         for dsym_project_file in dsym_project_files:
             try:
@@ -112,5 +125,12 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
                 )
             except IntegrityError:
                 pass
+    except http.CannotFetch:
+        logger.warning(
+            'Error fetching file from iTunes Connect %r',
+            url,
+            exc_info=True
+        )
     finally:
+        settings.SENTRY_FETCH_TIMEOUT = prev_timeout
         temp.close()

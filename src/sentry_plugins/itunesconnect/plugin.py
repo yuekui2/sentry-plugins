@@ -12,6 +12,7 @@ from sentry.plugins import plugins
 from sentry.plugins.base.v1 import Plugin
 from sentry.plugins.base.configuration import react_plugin_config
 from sentry_plugins.utils import get_secret_field_config
+from sentry.exceptions import PluginError
 
 from sentry_plugins.base import CorePluginMixin
 from .client import ItunesConnectClient
@@ -51,11 +52,22 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
-    def get_client(self, project):
-        return ItunesConnectClient(
-            email=self.get_option('email', project),
-            password=self.get_option('password', project),
-        )
+    def get_client(self, project, retry=False):
+        cache_key = self.get_itc_client_cache_key(project)
+        try:
+            cached_client = cache.get(cache_key)
+            if cached_client:
+                return ItunesConnectClient.from_json(cached_client)
+            client = ItunesConnectClient(
+                email=self.get_option('email', project),
+                password=self.get_option('password', project),
+            )
+            cache.set(cache_key, client.to_json(), 3600)
+            return client
+        except ReadTimeout as exc:
+            if not retry:
+                return self.get_client(project=project, retry=True)
+            raise PluginError(exc)
 
     def get_project_urls(self):
         return [
@@ -63,13 +75,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         ]
 
     def test_configuration(self, project):
-        cache_key = self.get_itc_client_cache_key(project)
-        cached_client = cache.get(cache_key)
-        if cached_client:
-            return ItunesConnectClient.from_json(cached_client)
-        client = self.get_client(project=project)
-        cache.set(cache_key, client.to_json(), 3600)
-        return client
+        return self.get_client(project=project)
 
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)
