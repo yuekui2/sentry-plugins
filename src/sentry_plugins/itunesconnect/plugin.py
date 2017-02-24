@@ -64,7 +64,8 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             )
             cache.set(cache_key, client.to_json(), 3600)
             return client
-        except ReadTimeout as exc:
+        except Exception as exc:
+            cache.delete(cache_key)
             if not retry:
                 return self.get_client(project=project, retry=True)
             raise PluginError(exc)

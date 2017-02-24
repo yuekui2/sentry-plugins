@@ -39,13 +39,20 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             'itunesconnect:enabled'
         ],
     )
+
     for opt in options:
         project = get_project_from_id(opt.project_id)
+        # TODO sentry should automatically refresh the cache when need
+        # this call should not be needed
+        ProjectOption.objects.reload_cache(opt.project_id)
         plugin = get_itunes_connect_plugin(project)
 
-        if (plugin and
-                (not plugin.is_configured(project) or not plugin.is_enabled())):
-            logger.warning('Plugin %r for project %r is not configured', plugin, project)
+        # if itunes plugin is not up and running we do nothing
+        if plugin is None:
+            return
+        if not plugin.is_configured(project):
+            return
+        if not plugin.is_enabled(project):
             return
 
         itc = plugin.get_client(project)
@@ -53,7 +60,6 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             App.objects.create_or_update(app=app, project=project)
             for build in itc.iter_app_builds(app['id']):
                 fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
-    return
 
 
 @instrumented_task(

@@ -80,6 +80,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   renderUserDetails() {
+    if (!this.props.plugin.enabled) {
+      return null;
+    }
     let hasResult = false;
     let cachedResult = false;
     if (this.state.testResults && this.state.testResults.result) {
