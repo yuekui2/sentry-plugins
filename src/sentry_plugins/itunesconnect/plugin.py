@@ -65,10 +65,14 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             cache.set(cache_key, client.to_json(), 3600)
             return client
         except Exception as exc:
-            cache.delete(cache_key)
+            self.reset_client(project)
             if not retry:
                 return self.get_client(project=project, retry=True)
             raise PluginError(exc)
+
+    def reset_client(self, project):
+        cache.delete(self.get_itc_client_cache_key(project))
+        cache.delete(self.get_itc_response_cache_key(project))
 
     def get_project_urls(self):
         return [

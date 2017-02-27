@@ -47,10 +47,6 @@ class App(BaseModel):
     project = FlexibleForeignKey('sentry.Project')
     app_id = models.CharField(max_length=40, unique=True)
     data = JSONField()
-    # name = models.CharField(max_length=200, null=True)
-    # icon_url = models.CharField(max_length=300, null=True)
-    # platforms = models.CharField(max_length=300, null=True)
-    # bundle_id = models.CharField(max_length=200, null=True)
     last_synced = models.DateTimeField(default=timezone.now)
     date_added = models.DateTimeField(default=timezone.now)
 
