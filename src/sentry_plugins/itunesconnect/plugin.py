@@ -6,6 +6,7 @@ from django import forms
 from django.core.urlresolvers import reverse
 from django.core.cache import cache
 from six.moves.urllib.parse import urlparse, quote
+from hashlib import md5
 
 from sentry import options
 from sentry.plugins import plugins
@@ -32,10 +33,13 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
     ]
 
     def get_itc_response_cache_key(self, project):
-        return 'itc-response:%s' % (project.id)
+        return 'itc-response:%s%s' % (project.id, self.get_account_hash(project))
 
     def get_itc_client_cache_key(self, project):
-        return 'itc-client:%s' % (project.id)
+        return 'itc-client:%s%s' % (project.id, self.get_account_hash(project))
+
+    def get_account_hash(self, project):
+        return md5(self.get_option('email', project))
 
     def configure(self, project, request):
         return react_plugin_config(self, project, request)
@@ -58,9 +62,10 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             cached_client = cache.get(cache_key)
             if cached_client:
                 return ItunesConnectClient.from_json(cached_client)
-            client = ItunesConnectClient(
+            client = ItunesConnectClient()
+            client.login(
                 email=self.get_option('email', project),
-                password=self.get_option('password', project),
+                password=self.get_option('password', project)
             )
             cache.set(cache_key, client.to_json(), 3600)
             return client
@@ -100,7 +105,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             'help': 'Enter the email of the iTunes Connect user.'
         }, secret_field]
 
-    def get_celerybeat_schedule(self):
+    def get_cron_schedule(self):
         # 'schedule': timedelta(minutes=15),
         return {'sync-dsyms-from-itunes-connect': {
             'task': 'sentry.tasks.sync_dsyms_from_itunes_connect',
@@ -110,10 +115,9 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             },
         }}
 
-    def get_celery_imports(self):
-        return ('sentry_plugins.itunesconnect.tasks.itunesconnect')
+    def get_worker_imports(self):
+        return ['sentry_plugins.itunesconnect.tasks.itunesconnect']
 
-    def get_celery_queues(self):
-        # [0] == name, [1] == routing_key
-        return [('itunesconnect', 'itunesconnect')]
+    def get_worker_queues(self):
+        return 'itunesconnect'
 

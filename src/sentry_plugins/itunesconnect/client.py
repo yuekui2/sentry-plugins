@@ -10,8 +10,13 @@ from sentry.http import SafeSession
 
 BASE_URL = 'https://itunesconnect.apple.com/'
 API_BASE = urljoin(BASE_URL, 'WebObjects/iTunesConnect.woa/')
-LOGIN_URL = 'https://idmsa.apple.com/appleauth/auth/signin'
 ISK_JS_URL = urljoin(BASE_URL, 'itc/static-resources/controllers/login_cntrl.js')
+USER_DETAILS_URL = urljoin(API_BASE, 'ra/user/detail')
+
+APPLEID_BASE_URL = 'https://idmsa.apple.com/'
+LOGIN_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/signin')
+TWOFA_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/verify/trusteddevice/securitycode')
+TRUST_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/2sv/trust')
 
 _isk_re = re.compile(r'itcServiceKey\s+=\s+["\'](.*)["\']')
 
@@ -22,12 +27,16 @@ class ItcError(Exception):
 
 class ItunesConnectClient(object):
 
-    def __init__(self, email=None, password=None):
+    def __init__(self):
         self._session = SafeSession()
         self._service_key = None
         self._user_details = None
         self._current_team = None
+        self._scnt = None
+        self._session_id = None
+        self._2fa_enabled = None
 
+    def login(self, email=None, password=None):
         if email is not None:
             login_url = '%s?widgetKey=%s' % (
                 LOGIN_URL,
@@ -37,12 +46,52 @@ class ItunesConnectClient(object):
                 'accountName': email,
                 'password': password,
                 'rememberMe': False,
+            }, headers={
+                'X-Requested-With': 'XMLHttpRequest',
             })
-            rv.raise_for_status()
+
+            self._session_id = rv.headers.get('X-Apple-Id-Session-Id', None)
+            self._scnt = rv.headers.get('scnt', None)
+
+            if rv.headers.get('X-Apple-TwoSV-Trust-Eligible'):
+                self._2fa_enabled = True
+            else:
+                self._2fa_enabled = False
 
             # This is necessary because it sets some further cookies
-            rv = self._session.get(API_BASE)
+            rv = self._session.get(urljoin(API_BASE, 'wa'))
             rv.raise_for_status()
+
+    def two_factor(self, security_code):
+        import pprint;
+
+        rv = self._session.post(TWOFA_URL, json={
+            'securityCode': { "code": security_code },
+        }, headers={
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Apple-Id-Session-Id': self._session_id,
+            'scnt': self._scnt
+        })
+
+        rv.raise_for_status()
+        pprint.pprint('-----------------')
+        pprint.pprint(rv.status_code)
+        pprint.pprint(rv.text)
+        pprint.pprint(rv.headers)
+
+        if rv.status_code == 204:
+            pprint.pprint('----------- YO')
+            rv = self._session.get(TRUST_URL, headers={
+                'X-Apple-Id-Session-Id': self._session_id,
+                'scnt': self._scnt
+            })
+
+        pprint.pprint('-----------------')
+        pprint.pprint(self._session.cookies)
+        pprint.pprint(rv.status_code)
+        pprint.pprint(rv.text)
+        pprint.pprint(rv.headers)
 
     @classmethod
     def from_json(cls, data):
@@ -57,6 +106,18 @@ class ItunesConnectClient(object):
         if val is not None:
             rv._service_key = val
 
+        val = data.get('session_id')
+        if val is not None:
+            rv._session_id = val
+
+        val = data.get('scnt')
+        if val is not None:
+            rv._scnt = val
+
+        val = data.get('2fa_enabled')
+        if val is not None:
+            rv._2fa_enabled = val
+
         val = data.get('cookies')
         if val:
             add_dict_to_cookiejar(rv._session.cookies, val)
@@ -70,6 +131,9 @@ class ItunesConnectClient(object):
         return {
             'user_details': self._user_details,
             'service_key': self._service_key,
+            'scnt': self._scnt,
+            'session_id': self._session_id,
+            '2fa_enabled': self._2fa_enabled,
             'cookies': dict_from_cookiejar(self._session.cookies),
         }
 
@@ -83,7 +147,7 @@ class ItunesConnectClient(object):
 
     def refresh_user_details(self):
         """Refreshes the user details."""
-        rv = self._session.get(urljoin(API_BASE, 'ra/user/detail'))
+        rv = self._session.get(USER_DETAILS_URL)
         rv.raise_for_status()
         data = rv.json()['data']
         teams = []

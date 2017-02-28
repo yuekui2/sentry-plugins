@@ -8,9 +8,9 @@ from django.conf import settings
 from sentry import http
 from sentry.tasks.base import instrumented_task
 from sentry.models import (
-    Project, ProjectOption, create_files_from_macho_zip
+    Project, ProjectOption, create_files_from_macho_zip, VersionDSymFile,
+    DSymApp
 )
-from ..models import App, DSymFile
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
         try:
             itc = plugin.get_client(project)
             for app in itc.iter_apps():
-                App.objects.create_or_update(app=app, project=project)
+                DSymApp.objects.create_or_update(app=app, project=project)
                 for build in itc.iter_app_builds(app['id']):
                     fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
         except Exception:
@@ -73,7 +73,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
     plugin = get_itunes_connect_plugin(project)
     itc = plugin.get_client(project)
 
-    app_object = App.objects.filter(
+    app_object = DSymApp.objects.filter(
         app_id=app['id']
     ).first()
 
@@ -81,7 +81,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
         logger.warning('No app found')
         return
 
-    dsym_files = DSymFile.objects.filter(
+    dsym_files = VersionDSymFile.objects.filter(
         app=app_object,
         build=build['build_id']
     ).first()
@@ -96,7 +96,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
         build['build_id']
     )
     if url is None:
-        DSymFile.objects.create(
+        VersionDSymFile.objects.create(
             app=app_object,
             build=build['build_id'],
             version=build['version'],
@@ -107,7 +107,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
 
 def download_dsym(project_id, url, build, app_id, **kwargs):
     project = get_project_from_id(project_id)
-    app_object = App.objects.filter(
+    app_object = DSymApp.objects.filter(
         id=app_id
     ).first()
 
@@ -120,13 +120,15 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
         result = http.fetch_file(
             url=url,
             domain_lock_enabled=False,
-            outfile=temp
+            outfile=temp,
+            timeout=FETCH_TIMEOUT,
+            verify_ssl=True,
         )
         temp.seek(0)
         dsym_project_files = create_files_from_macho_zip(temp, project=project)
         for dsym_project_file in dsym_project_files:
             try:
-                DSymFile.objects.create(
+                VersionDSymFile.objects.create(
                     dsym_file=dsym_project_file,
                     app=app_object,
                     build=build['build_id'],
