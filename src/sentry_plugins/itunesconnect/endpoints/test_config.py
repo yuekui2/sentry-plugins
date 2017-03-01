@@ -3,7 +3,7 @@ from __future__ import absolute_import
 from django.core.cache import cache
 
 from sentry.plugins.endpoints import PluginProjectEndpoint
-
+from ..models import Client
 
 class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
     def get(self, request, project, *args, **kwargs):
@@ -21,7 +21,17 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
 
     def post(self, request, project, *args, **kwargs):
         try:
-            test_results = self.plugin.test_configuration(project).to_json()
+            client = self.plugin.test_configuration(project=project)
+            self.plugin.store_client(project=project, client=client)
+            import pprint; pprint.pprint(client.two_fa_request)
+            if client.two_fa_request:
+                return self.respond({
+                    'twoFARequest': True,
+                })
+            test_results = client.to_json()
+            db_client, _ = Client.objects.get_or_create(
+                project=project
+            )
         except Exception as exc:
             error = True
             result = None
@@ -35,7 +45,8 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             message = 'No errors returned'
             exception = None
             cached = True
-            cache.set(self.plugin.get_itc_response_cache_key(project), test_results, 3600)
+            db_client.apps_to_sync = test_results.get('user_details', None)
+            db_client.save()
 
         return self.respond({
             'message': message,

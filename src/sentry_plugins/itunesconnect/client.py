@@ -34,7 +34,7 @@ class ItunesConnectClient(object):
         self._current_team = None
         self._scnt = None
         self._session_id = None
-        self._2fa_enabled = None
+        self.two_fa_request = None
 
     def login(self, email=None, password=None):
         if email is not None:
@@ -54,9 +54,9 @@ class ItunesConnectClient(object):
             self._scnt = rv.headers.get('scnt', None)
 
             if rv.headers.get('X-Apple-TwoSV-Trust-Eligible'):
-                self._2fa_enabled = True
+                self.two_fa_request = True
             else:
-                self._2fa_enabled = False
+                self.two_fa_request = False
 
             # This is necessary because it sets some further cookies
             rv = self._session.get(urljoin(API_BASE, 'wa'))
@@ -65,8 +65,9 @@ class ItunesConnectClient(object):
     def two_factor(self, security_code):
         import pprint;
 
+        pprint.pprint(security_code)
         rv = self._session.post(TWOFA_URL, json={
-            'securityCode': { "code": security_code },
+            'securityCode': { 'code': security_code },
         }, headers={
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -74,11 +75,12 @@ class ItunesConnectClient(object):
             'scnt': self._scnt
         })
 
-        rv.raise_for_status()
         pprint.pprint('-----------------')
+        pprint.pprint(self.to_json(ensure_user_details=False))
         pprint.pprint(rv.status_code)
         pprint.pprint(rv.text)
         pprint.pprint(rv.headers)
+        rv.raise_for_status()
 
         if rv.status_code == 204:
             pprint.pprint('----------- YO')
@@ -114,9 +116,9 @@ class ItunesConnectClient(object):
         if val is not None:
             rv._scnt = val
 
-        val = data.get('2fa_enabled')
+        val = data.get('two_fa_request')
         if val is not None:
-            rv._2fa_enabled = val
+            rv.two_fa_request = val
 
         val = data.get('cookies')
         if val:
@@ -133,7 +135,7 @@ class ItunesConnectClient(object):
             'service_key': self._service_key,
             'scnt': self._scnt,
             'session_id': self._session_id,
-            '2fa_enabled': self._2fa_enabled,
+            'two_fa_request': self.two_fa_request,
             'cookies': dict_from_cookiejar(self._session.cookies),
         }
 

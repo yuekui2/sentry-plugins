@@ -18,7 +18,8 @@ from sentry.exceptions import PluginError
 from sentry_plugins.base import CorePluginMixin
 from .client import ItunesConnectClient
 from .endpoints.test_config import ItunesConnectTestConfigEndpoint
-
+from .endpoints.security import ItunesConnectSecurityEndpoint
+from .models import Client
 
 class ItunesConnectPlugin(CorePluginMixin, Plugin):
     description = 'iTunes Connect Debug symbols sync service.'
@@ -56,36 +57,49 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
-    def get_client(self, project, retry=False):
-        cache_key = self.get_itc_client_cache_key(project)
+    def get_client(self, project):
         try:
-            cached_client = cache.get(cache_key)
-            if cached_client:
-                return ItunesConnectClient.from_json(cached_client)
-            client = ItunesConnectClient()
-            client.login(
-                email=self.get_option('email', project),
-                password=self.get_option('password', project)
+            stored_client, _ = Client.objects.get_or_create(
+                project=project
             )
-            cache.set(cache_key, client.to_json(), 3600)
-            return client
+            import pprint;
+            pprint.pprint('asdasdasd------------')
+            pprint.pprint(stored_client.itc_client)
+            if stored_client.itc_client:
+                import pprint; pprint.pprint('--------- Cached Client')
+                return ItunesConnectClient.from_json(stored_client.itc_client)
+            return ItunesConnectClient()
         except Exception as exc:
-            self.reset_client(project)
-            if not retry:
-                return self.get_client(project=project, retry=True)
             raise PluginError(exc)
 
     def reset_client(self, project):
-        cache.delete(self.get_itc_client_cache_key(project))
-        cache.delete(self.get_itc_response_cache_key(project))
+        client, _ = Client.objects.get_or_create(
+            project=project
+        )
+        client.itc_client = None
+        client.save()
+
+    def store_client(self, project, client):
+        db_client, _ = Client.objects.get_or_create(
+            project=project
+        )
+        db_client.itc_client = client.to_json(ensure_user_details=False)
+        db_client.save()
 
     def get_project_urls(self):
         return [
             (r'^test-config/', ItunesConnectTestConfigEndpoint.as_view(plugin=self)),
+            (r'^securitycode/', ItunesConnectSecurityEndpoint.as_view(plugin=self)),
         ]
 
     def test_configuration(self, project):
-        return self.get_client(project=project)
+        client = self.get_client(project=project)
+        import pprint; pprint.pprint(client)
+        client.login(
+            email=self.get_option('email', project),
+            password=self.get_option('password', project)
+        )
+        return client
 
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)

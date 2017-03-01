@@ -62,7 +62,8 @@ def sync_dsyms_from_itunes_connect(**kwargs):
                 for build in itc.iter_app_builds(app['id']):
                     fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
         except Exception:
-            plugin.reset_client(project)
+            # plugin.reset_client(project)
+            print('reset')
 
 
 @instrumented_task(

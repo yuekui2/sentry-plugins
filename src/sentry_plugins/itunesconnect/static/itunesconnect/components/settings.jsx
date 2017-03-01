@@ -10,6 +10,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
 
     Object.assign(this.state, {
       testing: false,
+      twoFARequest: false,
     });
   }
 
@@ -20,6 +21,19 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
         this.setState({
           testResults: data,
         });
+      }
+    });
+  }
+
+  sendAuthCode(code) {
+    console.log(code);
+    this.api.request(`${this.getPluginEndpoint()}securitycode/`, {
+      method: 'POST',
+      data: {
+        securitycode: code,
+      },
+      success: (data) => {
+        console.log(data);
       }
     });
   }
@@ -35,9 +49,17 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
     this.api.request(`${this.getPluginEndpoint()}test-config/`, {
       method: 'POST',
       success: (data) => {
-        this.setState({
-          testResults: data,
-        });
+        if (data.twoFARequest) {
+          let code = prompt("Please enter your code", "");
+          if (code != null) {
+            console.log(code);
+            this.sendAuthCode(code);
+          }
+        } else {
+          this.setState({
+            testResults: data,
+          });
+        }
       },
       error: (error) => {
         this.setState({
