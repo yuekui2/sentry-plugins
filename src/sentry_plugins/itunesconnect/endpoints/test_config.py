@@ -7,10 +7,13 @@ from ..models import Client
 
 class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
     def get(self, request, project, *args, **kwargs):
-        test_results = cache.get(self.plugin.get_itc_response_cache_key(project))
-        if test_results is not None and test_results.get('user_details', None):
+        db_client, _ = Client.objects.get_or_create(
+            project=project
+        )
+        test_results = db_client.apps_to_sync
+        if test_results is not None and test_results.get('teams', None):
             return self.respond({
-                'result': test_results.get('user_details', None),
+                'result': test_results,
                 'cached': True
             })
         else:
@@ -38,7 +41,6 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             message = 'There was an error connecting to iTunes Connect.'
             exception =  repr(exc)
             cached = False
-            cache.delete(self.plugin.get_itc_response_cache_key(project))
         else:
             error = False
             result = test_results.get('user_details', None)

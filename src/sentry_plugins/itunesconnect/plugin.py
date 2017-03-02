@@ -33,15 +33,6 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         'dist/itunesconnect.js',
     ]
 
-    def get_itc_response_cache_key(self, project):
-        return 'itc-response:%s%s' % (project.id, self.get_account_hash(project))
-
-    def get_itc_client_cache_key(self, project):
-        return 'itc-client:%s%s' % (project.id, self.get_account_hash(project))
-
-    def get_account_hash(self, project):
-        return md5(self.get_option('email', project))
-
     def configure(self, project, request):
         return react_plugin_config(self, project, request)
 
@@ -54,6 +45,11 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
     def has_project_conf(self):
         return True
 
+    def set_option(self, key, value, project=None, user=None):
+        super(Plugin, self).set_option(key, value, project, user)
+        if key != 'enabled' and project:
+            self.reset_client(project)
+
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
@@ -62,11 +58,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             stored_client, _ = Client.objects.get_or_create(
                 project=project
             )
-            import pprint;
-            pprint.pprint('asdasdasd------------')
-            pprint.pprint(stored_client.itc_client)
             if stored_client.itc_client:
-                import pprint; pprint.pprint('--------- Cached Client')
                 return ItunesConnectClient.from_json(stored_client.itc_client)
             return ItunesConnectClient()
         except Exception as exc:
@@ -77,6 +69,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             project=project
         )
         client.itc_client = None
+        client.apps_to_sync = None
         client.save()
 
     def store_client(self, project, client):
@@ -94,7 +87,6 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
 
     def test_configuration(self, project):
         client = self.get_client(project=project)
-        import pprint; pprint.pprint(client)
         client.login(
             email=self.get_option('email', project),
             password=self.get_option('password', project)
