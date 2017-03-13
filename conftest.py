@@ -26,6 +26,7 @@ def pytest_configure(config):
         'sentry_plugins.itunesconnect',
         'sentry_plugins.jira',
         'sentry_plugins.segment',
+        'sentry_plugins.sessionstack',
         'sentry_plugins.slack',
         'sentry_plugins.victorops',
     )
@@ -43,6 +44,7 @@ def pytest_configure(config):
     from sentry_plugins.pivotal.plugin import PivotalPlugin
     from sentry_plugins.pushover.plugin import PushoverPlugin
     from sentry_plugins.segment.plugin import SegmentPlugin
+    from sentry_plugins.sessionstack.plugin import SessionStackPlugin
     from sentry_plugins.slack.plugin import SlackPlugin
     from sentry_plugins.victorops.plugin import VictorOpsPlugin
     plugins.register(AsanaPlugin)
@@ -56,6 +58,7 @@ def pytest_configure(config):
     plugins.register(PivotalPlugin)
     plugins.register(PushoverPlugin)
     plugins.register(SegmentPlugin)
+    plugins.register(SessionStackPlugin)
     plugins.register(SlackPlugin)
     plugins.register(VictorOpsPlugin)
 

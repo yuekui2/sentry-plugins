@@ -19,7 +19,7 @@ from sentry.utils.distutils import (
     BuildAssetsCommand
 )
 
-VERSION = '8.14.0.dev0'
+VERSION = '8.15.0.dev0'
 
 tests_require = [
     'exam',
@@ -108,6 +108,7 @@ setup(
             'pivotal = sentry_plugins.pivotal',
             'pushover = sentry_plugins.pushover',
             'segment = sentry_plugins.segment',
+            # 'sessionstack = sentry_plugins.sessionstack',
             'slack = sentry_plugins.slack',
             'victorops = sentry_plugins.victorops',
         ],
@@ -124,6 +125,7 @@ setup(
             'pivotal = sentry_plugins.pivotal.plugin:PivotalPlugin',
             'pushover = sentry_plugins.pushover.plugin:PushoverPlugin',
             'segment = sentry_plugins.segment.plugin:SegmentPlugin',
+            # 'sessionstack = sentry_plugins.sessionstack.plugin:SessionStackPlugin',
             'slack = sentry_plugins.slack.plugin:SlackPlugin',
             'victorops = sentry_plugins.victorops.plugin:VictorOpsPlugin',
         ],
