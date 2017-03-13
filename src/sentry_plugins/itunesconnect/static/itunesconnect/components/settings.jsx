@@ -33,7 +33,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
         securitycode: code,
       },
       success: (data) => {
-        console.log(data);
+        this.testConfig();
       }
     });
   }
@@ -45,17 +45,17 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
     this.setState({
       testing: true,
     });
-    let loadingIndicator = IndicatorStore.add(i18n.t('Testing Connection..'));
+    let loadingIndicator = IndicatorStore.add(i18n.t('Syncing account...'));
     this.api.request(`${this.getPluginEndpoint()}test-config/`, {
       method: 'POST',
       success: (data) => {
         if (data.twoFARequest) {
           let code = prompt("Please enter your code", "");
           if (code != null) {
-            console.log(code);
             this.sendAuthCode(code);
           }
         } else {
+          console.log(data);
           this.setState({
             testResults: data,
           });

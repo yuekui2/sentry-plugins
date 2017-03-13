@@ -11,6 +11,7 @@ from sentry.models import (
     Project, ProjectOption, create_files_from_macho_zip, VersionDSymFile,
     DSymApp
 )
+from sentry.utils.locking import UnableToAcquireLock
 
 logger = logging.getLogger(__name__)
 
@@ -39,32 +40,37 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             'itunesconnect:enabled'
         ],
     )
-
+    from sentry import app
+    return # TODO
     for opt in options:
-        project = get_project_from_id(opt.project_id)
-        # TODO sentry should automatically refresh the cache when need
-        # this call should not be needed
-        ProjectOption.objects.reload_cache(opt.project_id)
-        plugin = get_itunes_connect_plugin(project)
-
-        # if itunes plugin is not up and running we do nothing
-        if plugin is None:
-            return
-        if not plugin.is_configured(project):
-            return
-        if not plugin.is_enabled(project):
-            return
-
+        lock_key = 'sync_dsyms_from_itunes_connect:%s' % opt.project_id
+        lock = app.locks.get(lock_key, duration=60)
         try:
-            itc = plugin.get_client(project)
-            for app in itc.iter_apps():
-                DSymApp.objects.create_or_update(app=app, project=project)
-                for build in itc.iter_app_builds(app['id']):
-                    fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
-        except Exception as exc:
-            # plugin.reset_client(project)
-            import pprint; pprint.pprint(exc)
+            with lock.acquire():
+                project = get_project_from_id(opt.project_id)
+                # TODO sentry should automatically refresh the cache when need
+                # this call should not be needed
+                ProjectOption.objects.reload_cache(opt.project_id)
+                plugin = get_itunes_connect_plugin(project)
 
+                # if itunes plugin is not up and running we do nothing
+                if plugin is None:
+                    return
+                if not plugin.is_configured(project):
+                    return
+                if not plugin.is_enabled(project):
+                    return
+
+                try:
+                    itc = plugin.get_client(project)
+                    for app in itc.iter_apps():
+                        DSymApp.objects.create_or_update(app=app, project=project)
+                        for build in itc.iter_app_builds(app['id']):
+                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
+                except Exception as error:
+                    logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
+        except UnableToAcquireLock as error:
+            logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
 
 @instrumented_task(
     name='sentry.tasks.fetch_dsym_url',

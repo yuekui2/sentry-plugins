@@ -68,8 +68,8 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         client, _ = Client.objects.get_or_create(
             project=project
         )
-        client.itc_client = None
-        client.apps_to_sync = None
+        client.itc_client = {}
+        client.apps_to_sync = {}
         client.save()
 
     def store_client(self, project, client):

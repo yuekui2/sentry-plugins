@@ -1,12 +1,11 @@
 from __future__ import absolute_import
 
 import re
+import time
+
 from six.moves.urllib.parse import urljoin
-
 from requests.utils import dict_from_cookiejar, add_dict_to_cookiejar
-
 from sentry.http import SafeSession
-
 
 BASE_URL = 'https://itunesconnect.apple.com/'
 API_BASE = urljoin(BASE_URL, 'WebObjects/iTunesConnect.woa/')
@@ -63,9 +62,6 @@ class ItunesConnectClient(object):
             rv.raise_for_status()
 
     def two_factor(self, security_code):
-        import pprint;
-
-        pprint.pprint(security_code)
         rv = self._session.post(TWOFA_URL, json={
             'securityCode': { 'code': security_code },
         }, headers={
@@ -74,35 +70,19 @@ class ItunesConnectClient(object):
             'X-Apple-Id-Session-Id': self._session_id,
             'scnt': self._scnt
         })
-
-        pprint.pprint('-----------------')
-        pprint.pprint(self.to_json(ensure_user_details=False))
-        pprint.pprint(rv.status_code)
-        pprint.pprint(rv.text)
-        pprint.pprint(rv.headers)
         rv.raise_for_status()
 
         if rv.status_code == 204:
-            pprint.pprint('----------- YO')
             rv = self._session.get(TRUST_URL, headers={
                 'X-Apple-Id-Session-Id': self._session_id,
                 'scnt': self._scnt
             })
-
-        pprint.pprint('-----------------')
-        pprint.pprint(self._session.cookies)
-        pprint.pprint(rv.status_code)
-        pprint.pprint(rv.text)
-        pprint.pprint(rv.headers)
+        rv.raise_for_status()
 
     @classmethod
     def from_json(cls, data):
         """Creates an Itc object from json."""
         rv = cls()
-
-        val = data.get('user_details')
-        if val is not None:
-            rv._user_details = val
 
         val = data.get('service_key')
         if val is not None:
@@ -128,10 +108,7 @@ class ItunesConnectClient(object):
 
     def to_json(self, ensure_user_details=True):
         """Converts an ITC into a JSON object for caching."""
-        if ensure_user_details:
-            self.get_user_details()
         return {
-            'user_details': self._user_details,
             'service_key': self._service_key,
             'scnt': self._scnt,
             'session_id': self._session_id,
@@ -153,14 +130,23 @@ class ItunesConnectClient(object):
         rv.raise_for_status()
         data = rv.json()['data']
         teams = []
+        apps = []
         for acnt in data['associatedAccounts']:
             team_id = acnt['contentProvider']['contentProviderId']
-            teams.append({
-                'id': team_id,
-                'name': acnt['contentProvider']['name'],
-                'roles': acnt['roles'],
-                'apps': self._list_apps(team_id, data['sessionToken']['dsId']),
-            })
+            apps.append(self._list_apps(team_id, data['sessionToken']['dsId']))
+
+        import pprint; pprint.pprint(apps)
+        for app in apps:
+            for acnt in data['associatedAccounts']:
+                team_id = acnt['contentProvider']['contentProviderId']
+                if team_id == app[0]:
+                    teams.append({
+                        'id': team_id,
+                        'name': acnt['contentProvider']['name'],
+                        'roles': acnt['roles'],
+                        'apps': app[1],
+                    })
+
         self._user_details = {
             'teams': teams,
             'session': {
@@ -235,23 +221,26 @@ class ItunesConnectClient(object):
             return
         if ds_id is None:
             ds_id = self.get_user_details()['session']['ds_id']
-        self._session.post(urljoin(
+        rv = self._session.post(urljoin(
             API_BASE, 'ra/v1/session/webSession'), json={
             'contentProviderId': team_id,
             'dsId': ds_id,
-        }).raise_for_status()
-        self._current_team = team_id
+        })
+        rv.raise_for_status()
+        self._current_team = rv.json()['data']['contentProviderId']
 
     def _list_apps(self, team_id, ds_id=None):
+        import pprint;
+        pprint.pprint('_select_team')
+        pprint.pprint(self.to_json())
         self._select_team(team_id, ds_id)
+        pprint.pprint(team_id)
 
         rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/manageyourapps/summary/v2'))
         rv.raise_for_status()
-
         apps = rv.json()['data']['summaries']
         rv = []
-
         for app in apps:
             platforms = set()
             for x in app['versionSets']:
@@ -265,7 +254,7 @@ class ItunesConnectClient(object):
                 'platforms': sorted(platforms),
             })
 
-        return rv
+        return (self._current_team, rv)
 
     def close(self):
         self._session.close()

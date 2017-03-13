@@ -21,17 +21,15 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
                 'result': None,
                 'cached': False
             })
-
     def post(self, request, project, *args, **kwargs):
         try:
             client = self.plugin.test_configuration(project=project)
             self.plugin.store_client(project=project, client=client)
-            import pprint; pprint.pprint(client.two_fa_request)
             if client.two_fa_request:
                 return self.respond({
                     'twoFARequest': True,
                 })
-            test_results = client.to_json()
+            test_results = client.get_user_details()
             db_client, _ = Client.objects.get_or_create(
                 project=project
             )
@@ -43,11 +41,11 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             cached = False
         else:
             error = False
-            result = test_results.get('user_details', None)
+            result = test_results
             message = 'No errors returned'
             exception = None
             cached = True
-            db_client.apps_to_sync = test_results.get('user_details', None)
+            db_client.apps_to_sync = test_results
             db_client.save()
 
         return self.respond({
