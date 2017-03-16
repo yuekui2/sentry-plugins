@@ -11,7 +11,7 @@ from sentry.models import (
     Project, ProjectOption, create_files_from_macho_zip, VersionDSymFile,
     DSymApp
 )
-from sentry.utils.locking import UnableToAcquireLock
+from ..models import Client
 
 logger = logging.getLogger(__name__)
 
@@ -41,35 +41,38 @@ def sync_dsyms_from_itunes_connect(**kwargs):
         ],
     )
     from sentry import app
-    return # TODO
+
     for opt in options:
-        lock_key = 'sync_dsyms_from_itunes_connect:%s' % opt.project_id
-        lock = app.locks.get(lock_key, duration=60)
+        project = get_project_from_id(opt.project_id)
+        # TODO sentry should automatically refresh the cache when need
+        # this call should not be needed
+        ProjectOption.objects.reload_cache(opt.project_id)
+        plugin = get_itunes_connect_plugin(project)
+
+        # if itunes plugin is not up and running we do nothing
+        if plugin is None:
+            return
+        if not plugin.is_configured(project):
+            return
+        if not plugin.is_enabled(project):
+            return
+
         try:
-            with lock.acquire():
-                project = get_project_from_id(opt.project_id)
-                # TODO sentry should automatically refresh the cache when need
-                # this call should not be needed
-                ProjectOption.objects.reload_cache(opt.project_id)
-                plugin = get_itunes_connect_plugin(project)
+            itc = plugin.get_client(project)
 
-                # if itunes plugin is not up and running we do nothing
-                if plugin is None:
-                    return
-                if not plugin.is_configured(project):
-                    return
-                if not plugin.is_enabled(project):
-                    return
+            itc_client = Client.objects.filter(
+                project=project
+            ).first()
+            if itc_client is None:
+                logger.warning('Initial sync not done yet')
+                return
 
-                try:
-                    itc = plugin.get_client(project)
-                    for app in itc.iter_apps():
-                        DSymApp.objects.create_or_update(app=app, project=project)
-                        for build in itc.iter_app_builds(app['id']):
-                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
-                except Exception as error:
-                    logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
-        except UnableToAcquireLock as error:
+            for team in itc_client.teams:
+                for app in team.get('apps', []):
+                    DSymApp.objects.create_or_update(app=app, project=project)
+                    for build in itc.iter_app_builds(app, team):
+                        fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
+        except Exception as error:
             logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
 
 @instrumented_task(
@@ -84,7 +87,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
         app_id=app['id']
     ).first()
 
-    if app is None:
+    if app_object is None:
         logger.warning('No app found')
         return
 
@@ -108,7 +111,8 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
             build=build['build_id'],
             version=build['version'],
         )
-        return
+        logger.warning('Build has no debug symbols')
+        return # this happens if an app does not have any builds/debug symbols
     download_dsym(project_id=project_id, url=url, build=build, app_id=app_object.id)
 
 
@@ -118,10 +122,6 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
         id=app_id
     ).first()
 
-    # We bump the timeout and reset it after the download
-    # itc is kind of slow
-    prev_timeout = settings.SENTRY_FETCH_TIMEOUT
-    settings.SENTRY_FETCH_TIMEOUT = FETCH_TIMEOUT
     temp = tempfile.TemporaryFile()
     try:
         result = http.fetch_file(
@@ -150,5 +150,4 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
             exc_info=True
         )
     finally:
-        settings.SENTRY_FETCH_TIMEOUT = prev_timeout
         temp.close()

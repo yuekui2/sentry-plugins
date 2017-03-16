@@ -10,10 +10,10 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
         db_client, _ = Client.objects.get_or_create(
             project=project
         )
-        test_results = db_client.apps_to_sync
-        if test_results is not None and test_results.get('teams', None):
+        teams = db_client.teams
+        if teams is not None:
             return self.respond({
-                'result': test_results,
+                'result': teams,
                 'cached': True
             })
         else:
@@ -41,11 +41,11 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             cached = False
         else:
             error = False
-            result = test_results
+            result = test_results.get('teams', {})
             message = 'No errors returned'
             exception = None
             cached = True
-            db_client.apps_to_sync = test_results
+            db_client.teams = test_results.get('teams', {})
             db_client.save()
 
         return self.respond({

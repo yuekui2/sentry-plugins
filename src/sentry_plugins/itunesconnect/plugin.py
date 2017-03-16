@@ -69,7 +69,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             project=project
         )
         client.itc_client = {}
-        client.apps_to_sync = {}
+        client.teams = {}
         client.save()
 
     def store_client(self, project, client):
@@ -125,5 +125,5 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         return ['sentry_plugins.itunesconnect.tasks.itunesconnect']
 
     def get_worker_queues(self):
-        return 'itunesconnect'
+        return ['itunesconnect']
 

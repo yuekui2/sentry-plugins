@@ -12,7 +12,7 @@ class Migration(SchemaMigration):
         db.create_table(u'itunesconnect_client', (
             (u'id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
             ('project', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.Project'], unique=True)),
-            ('apps_to_sync', self.gf('jsonfield.fields.JSONField')(default={})),
+            ('teams', self.gf('jsonfield.fields.JSONField')(default={})),
             ('itc_client', self.gf('jsonfield.fields.JSONField')(default={})),
             ('last_updated', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
         ))
@@ -27,11 +27,11 @@ class Migration(SchemaMigration):
     models = {
         'itunesconnect.client': {
             'Meta': {'object_name': 'Client'},
-            'apps_to_sync': ('jsonfield.fields.JSONField', [], {'default': '{}'}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'itc_client': ('jsonfield.fields.JSONField', [], {'default': '{}'}),
             'last_updated': ('django.db.models.fields.DateTimeField', [], {'default': 'datetime.datetime.now'}),
-            'project': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Project']", 'unique': 'True'})
+            'project': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Project']", 'unique': 'True'}),
+            'teams': ('jsonfield.fields.JSONField', [], {'default': '{}'})
         },
         'sentry.organization': {
             'Meta': {'object_name': 'Organization'},

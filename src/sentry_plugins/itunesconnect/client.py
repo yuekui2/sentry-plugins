@@ -135,7 +135,6 @@ class ItunesConnectClient(object):
             team_id = acnt['contentProvider']['contentProviderId']
             apps.append(self._list_apps(team_id, data['sessionToken']['dsId']))
 
-        import pprint; pprint.pprint(apps)
         for app in apps:
             for acnt in data['associatedAccounts']:
                 team_id = acnt['contentProvider']['contentProviderId']
@@ -166,20 +165,16 @@ class ItunesConnectClient(object):
                     seen.add(app['id'])
                     yield app
 
-    def iter_app_builds(self, app_id):
+    def iter_app_builds(self, app, team):
         """Given an app ID, this iterates over all the builds that exist
         for it.
         """
-        rv = self._find_app(app_id)
-        if rv is None:
-            return
-        app, team = rv
         self._select_team(team['id'])
 
         for platform in app['platforms']:
             rv = self._session.get(urljoin(
                 API_BASE, 'ra/apps/%s/buildHistory?platform=%s' % (
-                    app_id, platform)))
+                    app['id'], platform)))
             rv.raise_for_status()
 
             trains = rv.json()['data']['trains']
@@ -210,12 +205,6 @@ class ItunesConnectClient(object):
             return self._service_key
         raise ItcError('Could not find service key')
 
-    def _find_app(self, app_id):
-        for team in self.get_user_details()['teams']:
-            for app in team['apps']:
-                if app['id'] == app_id:
-                    return app, team
-
     def _select_team(self, team_id, ds_id=None):
         if self._current_team == team_id:
             return
@@ -230,11 +219,7 @@ class ItunesConnectClient(object):
         self._current_team = rv.json()['data']['contentProviderId']
 
     def _list_apps(self, team_id, ds_id=None):
-        import pprint;
-        pprint.pprint('_select_team')
-        pprint.pprint(self.to_json())
         self._select_team(team_id, ds_id)
-        pprint.pprint(team_id)
 
         rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/manageyourapps/summary/v2'))

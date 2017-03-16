@@ -158,7 +158,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
           <div className="tab-pane active">
               {hasResult &&
                 <ul className="group-list group-list-small">
-                  {this.state.testResults.result.teams.map((team) => {
+                  {this.state.testResults.result.map((team) => {
                       return this.renderTeam(team);
                   })}
                 </ul>

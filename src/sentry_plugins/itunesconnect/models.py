@@ -12,7 +12,7 @@ class Client(BaseModel):
 
     objects = BaseManager()
     project = FlexibleForeignKey('sentry.Project', unique=True)
-    apps_to_sync = JSONField()
+    teams = JSONField()
     itc_client = JSONField()
     last_updated = models.DateTimeField(default=timezone.now)
 
