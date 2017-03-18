@@ -5,12 +5,20 @@ import operator
 from django.core.urlresolvers import reverse
 from django.db.models import Q
 from sentry import http
+from sentry.exceptions import PluginIdentityRequired
 from sentry.models import TagKey, TagValue
 from sentry.plugins.bases import notify
 from sentry.utils import json
 from sentry.utils.http import absolute_uri
 
 from sentry_plugins.base import CorePluginMixin
+from social_auth.models import UserSocialAuth
+
+from .auth import SlackAuth
+
+ERR_AUTH_NOT_CONFIGURED = (
+    'You need to authorize Slack to continue.'
+)
 
 LEVEL_TO_COLOR = {
     'debug': 'cfd3da',
@@ -26,11 +34,15 @@ class SlackPlugin(CorePluginMixin, notify.NotificationPlugin):
     slug = 'slack'
     description = 'Post notifications to a Slack channel.'
     conf_key = 'slack'
+    auth_provider = 'slack'
 
     def is_configured(self, project):
         return bool(self.get_option('webhook', project))
 
-    def get_config(self, project, **kwargs):
+    def get_config(self, project, user=None, **kwargs):
+        if user is None or self.needs_auth(project, user):
+            raise PluginIdentityRequired(ERR_AUTH_NOT_CONFIGURED)
+
         return [{
             'name': 'webhook',
             'label': 'Webhook URL',
@@ -238,3 +250,30 @@ class SlackPlugin(CorePluginMixin, notify.NotificationPlugin):
         # Apparently we've stored some bad data from before we used `URLField`.
         webhook = webhook.strip(' ')
         return http.safe_urlopen(webhook, method='POST', data=values)
+
+    def get_auth_for_user(self, user, **kwargs):
+        if not user.is_authenticated():
+            return None
+
+        try:
+            return UserSocialAuth.objects.filter(
+                user=user,
+                provider=self.auth_provider,
+            )[0]
+        except IndexError:
+            return None
+
+    def needs_auth(self, project, user, **kwargs):
+        if not user.is_authenticated():
+            return True
+        return not UserSocialAuth.objects.filter(
+            user=user,
+            provider=self.auth_provider,
+        ).exists()
+
+    def has_auth_configured(self, **kwargs):
+        from sentry.utils.auth import get_auth_providers
+        return self.auth_provider in get_auth_providers()
+
+    def setup(self, bindings):
+        bindings.add('social-auth.provider', SlackAuth, id='slack')
