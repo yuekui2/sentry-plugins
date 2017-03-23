@@ -9,7 +9,7 @@ from sentry import http
 from sentry.tasks.base import instrumented_task
 from sentry.models import (
     Project, ProjectOption, create_files_from_macho_zip, VersionDSymFile,
-    DSymApp
+    DSymApp, DSymPlatform
 )
 from ..models import Client
 
@@ -71,7 +71,13 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             for team in itc_client.teams:
                 for app in team.get('apps', []):
                     if itc_client.is_app_active(app.get('id', None)):
-                        DSymApp.objects.create_or_update(app=app, project=project)
+                        DSymApp.objects.create_or_update(
+                            sync_id=app['id'],
+                            app_id=app['bundle_id'],
+                            project=project,
+                            data=app,
+                            platform=DSymPlatform.APPLE,
+                        )
                         for build in itc.iter_app_builds(app, team):
                             fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
         except Exception as error:
@@ -85,16 +91,16 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
     plugin = get_itunes_connect_plugin(project)
     itc = plugin.get_logged_in_client(project)
 
-    app_object = DSymApp.objects.filter(
-        app_id=app['id']
+    dsym_app = DSymApp.objects.filter(
+        sync_id=app['id']
     ).first()
 
-    if app_object is None:
+    if dsym_app is None:
         logger.warning('No app found')
         return
 
     dsym_files = VersionDSymFile.objects.filter(
-        app=app_object,
+        dsym_app=dsym_app,
         build=build['build_id']
     ).first()
 
@@ -109,19 +115,19 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
     )
     if url is None:
         VersionDSymFile.objects.create(
-            app=app_object,
+            dsym_app=dsym_app,
             build=build['build_id'],
             version=build['version'],
         )
         logger.warning('Build has no debug symbols')
         return # this happens if an app does not have any builds/debug symbols
-    download_dsym(project_id=project_id, url=url, build=build, app_id=app_object.id)
+    download_dsym(project_id=project_id, url=url, build=build, dsym_app_id=dsym_app.id)
 
 
-def download_dsym(project_id, url, build, app_id, **kwargs):
+def download_dsym(project_id, url, build, dsym_app_id, **kwargs):
     project = get_project_from_id(project_id)
     app_object = DSymApp.objects.filter(
-        id=app_id
+        id=dsym_app_id
     ).first()
 
     temp = tempfile.TemporaryFile()
@@ -139,7 +145,7 @@ def download_dsym(project_id, url, build, app_id, **kwargs):
             try:
                 VersionDSymFile.objects.create(
                     dsym_file=dsym_project_file,
-                    app=app_object,
+                    dsym_app=app_object,
                     build=build['build_id'],
                     version=build['version'],
                 )
