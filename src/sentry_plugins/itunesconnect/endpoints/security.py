@@ -12,7 +12,7 @@ class ItunesConnectSecurityEndpoint(PluginProjectEndpoint):
             securitycode = json.loads(request.body.decode('utf-8')).get('securitycode')
             client = self.plugin.get_client(project)
             client.two_factor(securitycode)
-            self.plugin.store_client(project=project, client=client)
+            self.plugin.store_client(project=project, client=client, force_store=True)
             return self.respond({ # todo better error
                 'result': 'ok'
             })

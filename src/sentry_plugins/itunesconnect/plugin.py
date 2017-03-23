@@ -17,7 +17,9 @@ from sentry.exceptions import PluginError
 
 from sentry_plugins.base import CorePluginMixin
 from .client import ItunesConnectClient
-from .endpoints.test_config import ItunesConnectTestConfigEndpoint
+from .endpoints.config import (
+    ItunesConnectTestConfigEndpoint, ItunesConnectAppSyncEndpoint
+)
 from .endpoints.security import ItunesConnectSecurityEndpoint
 from .models import Client
 
@@ -70,22 +72,27 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         )
         client.itc_client = {}
         client.teams = {}
+        client.apps_to_sync = {}
         client.save()
 
-    def store_client(self, project, client):
+    def store_client(self, project, client, force_store=False):
         db_client, _ = Client.objects.get_or_create(
             project=project
         )
-        db_client.itc_client = client.to_json(ensure_user_details=False)
-        db_client.save()
+        # We only want to save the client to the database if we are not authenticated
+        # We force it only after entering the 2FA request
+        if client.authenticated is False or force_store:
+            db_client.itc_client = client.to_json(ensure_user_details=False)
+            db_client.save()
 
     def get_project_urls(self):
         return [
             (r'^test-config/', ItunesConnectTestConfigEndpoint.as_view(plugin=self)),
+            (r'^sync-app/', ItunesConnectAppSyncEndpoint.as_view(plugin=self)),
             (r'^securitycode/', ItunesConnectSecurityEndpoint.as_view(plugin=self)),
         ]
 
-    def test_configuration(self, project):
+    def get_logged_in_client(self, project):
         client = self.get_client(project=project)
         client.login(
             email=self.get_option('email', project),

@@ -34,6 +34,7 @@ class ItunesConnectClient(object):
         self._scnt = None
         self._session_id = None
         self.two_fa_request = None
+        self.authenticated = False
 
     def login(self, email=None, password=None):
         if email is not None:
@@ -60,6 +61,9 @@ class ItunesConnectClient(object):
             # This is necessary because it sets some further cookies
             rv = self._session.get(urljoin(API_BASE, 'wa'))
             rv.raise_for_status()
+            # If we reach this point and it's no 2FA we are authenticated
+            if self.two_factor is False and self.authenticated is False:
+                self.authenticated = True
 
     def two_factor(self, security_code):
         rv = self._session.post(TWOFA_URL, json={
@@ -78,6 +82,8 @@ class ItunesConnectClient(object):
                 'scnt': self._scnt
             })
         rv.raise_for_status()
+        # If we reach this point we have 2FA and then we are authenticated
+        self.authenticated = True
 
     @classmethod
     def from_json(cls, data):
@@ -100,6 +106,10 @@ class ItunesConnectClient(object):
         if val is not None:
             rv.two_fa_request = val
 
+        val = data.get('authenticated')
+        if val is not None:
+            rv.authenticated = val
+
         val = data.get('cookies')
         if val:
             add_dict_to_cookiejar(rv._session.cookies, val)
@@ -113,6 +123,7 @@ class ItunesConnectClient(object):
             'scnt': self._scnt,
             'session_id': self._session_id,
             'two_fa_request': self.two_fa_request,
+            'authenticated': self.authenticated,
             'cookies': dict_from_cookiejar(self._session.cookies),
         }
 
@@ -176,16 +187,32 @@ class ItunesConnectClient(object):
                 API_BASE, 'ra/apps/%s/buildHistory?platform=%s' % (
                     app['id'], platform)))
             rv.raise_for_status()
-
             trains = rv.json()['data']['trains']
             for train in trains:
-                for item in train.get('items') or ():
-                    yield {
-                        'app_id': app['id'],
-                        'platform': platform,
-                        'version': train['versionString'],
-                        'build_id': item['buildVersion'],
-                    }
+                if train.get('items') is None:
+                    app_builds = self._fetch_build_history_with_train(app, train.get('versionString'), platform)
+                    for app_build in app_builds:
+                        yield {
+                            'app_id': app['id'],
+                            'platform': app_build['platform'],
+                            'version': train['versionString'],
+                            'build_id': app_build['buildVersion'],
+                        }
+                else:
+                    for item in train.get('items') or ():
+                        yield {
+                            'app_id': app['id'],
+                            'platform': platform,
+                            'version': train['versionString'],
+                            'build_id': item['buildVersion'],
+                        }
+
+    def _fetch_build_history_with_train(self, app, version, platform):
+        rv = self._session.get(urljoin(
+            API_BASE, 'ra/apps/%s/trains/%s/buildHistory?platform=%s' % (
+                app['id'], version, platform)))
+        rv.raise_for_status()
+        return rv.json().get('data', {}).get('items', [])
 
     def get_dsym_url(self, app_id, platform, version, build_id):
         """Looks up the dsym URL for a given build"""

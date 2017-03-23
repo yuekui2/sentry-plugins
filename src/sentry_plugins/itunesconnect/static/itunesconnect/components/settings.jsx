@@ -11,6 +11,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
     Object.assign(this.state, {
       testing: false,
       twoFARequest: false,
+      appActivating: false,
     });
   }
 
@@ -26,7 +27,6 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   sendAuthCode(code) {
-    console.log(code);
     this.api.request(`${this.getPluginEndpoint()}securitycode/`, {
       method: 'POST',
       data: {
@@ -55,7 +55,6 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
             this.sendAuthCode(code);
           }
         } else {
-          console.log(data);
           this.setState({
             testResults: data,
           });
@@ -73,6 +72,32 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
         IndicatorStore.remove(loadingIndicator);
         this.setState({
           testing: false,
+        });
+      }
+    });
+  }
+
+  activateApp(appID) {
+    if (this.state.appActivating) {
+      return;
+    }
+    this.setState({
+      appActivating: true,
+    });
+
+    this.api.request(`${this.getPluginEndpoint()}sync-app/`, {
+      method: 'POST',
+      data: {
+        app_id: appID,
+      },
+      success: (data) => {
+        this.setState({
+          testResults: data,
+        });
+      },
+      complete: () => {
+        this.setState({
+          appActivating: false,
         });
       }
     });
@@ -113,11 +138,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
                 <div className="event-message">
                   <span className="align-right pull-right" style={{paddingRight: 16}}>
                     <Switch size="lg"
-                      isActive={true}
-                      isLoading={false}
-                      toggle={() => {
-                        console.log('asd');
-                      }} />
+                      isActive={app.active}
+                      isLoading={this.state.appActivating}
+                      toggle={this.activateApp.bind(this, app.id)} />
                   </span>
                 </div>
               </div>

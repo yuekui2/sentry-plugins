@@ -58,20 +58,22 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             return
 
         try:
-            itc = plugin.get_client(project)
+            itc = plugin.get_logged_in_client(project)
 
             itc_client = Client.objects.filter(
                 project=project
             ).first()
+
             if itc_client is None:
                 logger.warning('Initial sync not done yet')
                 return
 
             for team in itc_client.teams:
                 for app in team.get('apps', []):
-                    DSymApp.objects.create_or_update(app=app, project=project)
-                    for build in itc.iter_app_builds(app, team):
-                        fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
+                    if itc_client.is_app_active(app.get('id', None)):
+                        DSymApp.objects.create_or_update(app=app, project=project)
+                        for build in itc.iter_app_builds(app, team):
+                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
         except Exception as error:
             logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
 
@@ -81,7 +83,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
 def fetch_dsym_url(project_id, app, build, **kwargs):
     project = get_project_from_id(project_id)
     plugin = get_itunes_connect_plugin(project)
-    itc = plugin.get_client(project)
+    itc = plugin.get_logged_in_client(project)
 
     app_object = DSymApp.objects.filter(
         app_id=app['id']
