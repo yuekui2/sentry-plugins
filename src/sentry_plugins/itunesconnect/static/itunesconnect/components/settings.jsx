@@ -1,5 +1,5 @@
 import React from 'react';
-import {i18n, IndicatorStore, LoadingError, LoadingIndicator, plugins, Switch} from 'sentry';
+import {i18n, IndicatorStore, plugins, Switch} from 'sentry';
 
 class Settings extends plugins.BasePlugin.DefaultSettings {
   constructor(props) {
@@ -12,6 +12,8 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       testing: false,
       twoFARequest: false,
       appActivating: false,
+      twoFactorEnabled: false,
+      sessionExpired: false
     });
   }
 
@@ -21,6 +23,8 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       success: (data) => {
         this.setState({
           testResults: data,
+          twoFactorEnabled: data.twoFactorEnabled,
+          sessionExpired: data.sessionExpired
         });
       }
     });
@@ -50,13 +54,15 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       method: 'POST',
       success: (data) => {
         if (data.twoFARequest) {
-          let code = prompt("Please enter your code", "");
-          if (code != null) {
+          let code = prompt('Please enter your code', '');
+          if (code !== null) {
             this.sendAuthCode(code);
           }
         } else {
           this.setState({
             testResults: data,
+            twoFactorEnabled: data.twoFactorEnabled,
+            sessionExpired: data.sessionExpired
           });
         }
       },
@@ -124,6 +130,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
             <div className="row" key={app.id}>
               <div className="col-xs-8 event-details">
                 <div className="event-message">
+                  <div className="app-icon" style={app.icon_url && {backgroundImage: `url(${app.icon_url})`}} />
                   {app.name}
                 </div>
                 <div className="event-extra">
@@ -151,14 +158,47 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
     );
   }
 
+  render2FAInfo() {
+    if (!this.state.twoFactorEnabled) {
+      return null;
+    }
+    return (
+      <div className="row">
+        <div className="col-md-12">
+          <div className="alert alert-block alert-info">
+            Your account is using <strong>Two-Factor-Authententication</strong>.
+            It is recommend that you create a seperate user for syncing you debug
+            symbols.<br/>Sessions to iTunes Connect with Two-Factor-Authententication
+            enabled only last about 30 days. After that period of time you must
+            login again.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  renderSessionExpired() {
+    if (!this.state.sessionExpired) {
+      return null;
+    }
+    return (
+      <div className="row">
+        <div className="col-md-12">
+          <div className="alert alert-block alert-error">
+            Your session expired, please click on <strong>Sync Account</strong> the re-enable
+            the sync again.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   renderUserDetails() {
     if (!this.props.plugin.enabled) {
       return null;
     }
     let hasResult = false;
-    let cachedResult = false;
     if (this.state.testResults && this.state.testResults.result) {
-      cachedResult = this.state.testResults.cached;
       hasResult = true;
     }
     return (
@@ -193,14 +233,13 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   render() {
-    let metadata = this.props.plugin.metadata;
-
     return (
       <div>
         <div className="ref-itunesconnect-settings">
           {this.props.children}
         </div>
-
+        {this.render2FAInfo()}
+        {this.renderSessionExpired()}
         {this.state.testResults &&
           <div className="ref-itunesconnect-test-results">
             {this.state.testResults.error &&

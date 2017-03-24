@@ -3,7 +3,8 @@ from __future__ import absolute_import, print_function
 import tempfile
 import logging
 
-from django.conf import settings
+from django.db import IntegrityError
+from requests.exceptions import HTTPError
 
 from sentry import http
 from sentry.tasks.base import instrumented_task
@@ -40,7 +41,6 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             'itunesconnect:enabled'
         ],
     )
-    from sentry import app
 
     for opt in options:
         project = get_project_from_id(opt.project_id)
@@ -58,38 +58,52 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             return
 
         try:
-            itc = plugin.get_logged_in_client(project)
-
             itc_client = Client.objects.filter(
                 project=project
             ).first()
 
-            if itc_client is None:
+            if itc_client is None or \
+               len(itc_client.apps_to_sync) == 0 or \
+               len(itc_client.itc_client) == 0:
                 logger.warning('Initial sync not done yet')
                 return
 
+            itc = plugin.get_client(project)
             for team in itc_client.teams:
                 for app in team.get('apps', []):
                     if itc_client.is_app_active(app.get('id', None)):
-                        DSymApp.objects.create_or_update(
+                        DSymApp.objects.create_or_update_app(
                             sync_id=app['id'],
                             app_id=app['bundle_id'],
                             project=project,
                             data=app,
                             platform=DSymPlatform.APPLE,
                         )
-                        for build in itc.iter_app_builds(app, team):
-                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
+                        for build in itc.iter_app_builds(app, team['id']):
+                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build, team_id=team['id'])
         except Exception as error:
+            if isinstance(error, HTTPError):
+                if error.response.status_code == 401:
+                    logger.warning('iTunes Connect - Not Authorized', extra={'error': error})
+                    plugin.reset_client(project)
+                    return
             logger.warning('sync_dsyms_from_itunes_connect.fail', extra={'error': error})
+
 
 @instrumented_task(
     name='sentry.tasks.fetch_dsym_url',
     queue='itunesconnect')
-def fetch_dsym_url(project_id, app, build, **kwargs):
+def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
     project = get_project_from_id(project_id)
     plugin = get_itunes_connect_plugin(project)
-    itc = plugin.get_logged_in_client(project)
+    itc = plugin.get_client(project)
+    # if itunes plugin is not up and running we do nothing
+    if plugin is None:
+        return
+    if not plugin.is_configured(project):
+        return
+    if not plugin.is_enabled(project):
+        return
 
     dsym_app = DSymApp.objects.filter(
         sync_id=app['id']
@@ -105,10 +119,11 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
     ).first()
 
     if dsym_files:
-        return # we bail out here because we synced this already
+        return  # we bail out here because we synced this already
 
     url = itc.get_dsym_url(
         app['id'],
+        team_id,
         build['platform'],
         build['version'],
         build['build_id']
@@ -120,7 +135,7 @@ def fetch_dsym_url(project_id, app, build, **kwargs):
             version=build['version'],
         )
         logger.warning('Build has no debug symbols')
-        return # this happens if an app does not have any builds/debug symbols
+        return  # this happens if an app does not have any builds/debug symbols
     download_dsym(project_id=project_id, url=url, build=build, dsym_app_id=dsym_app.id)
 
 
@@ -132,7 +147,7 @@ def download_dsym(project_id, url, build, dsym_app_id, **kwargs):
 
     temp = tempfile.TemporaryFile()
     try:
-        result = http.fetch_file(
+        http.fetch_file(
             url=url,
             domain_lock_enabled=False,
             outfile=temp,

@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 
 import re
-import time
 
 from six.moves.urllib.parse import urljoin
 from requests.utils import dict_from_cookiejar, add_dict_to_cookiejar
@@ -35,39 +34,47 @@ class ItunesConnectClient(object):
         self._session_id = None
         self.two_fa_request = None
         self.authenticated = False
+        self.two_fa_done = False
 
     def login(self, email=None, password=None):
-        if email is not None:
-            login_url = '%s?widgetKey=%s' % (
-                LOGIN_URL,
-                self._get_service_key(),
-            )
-            rv = self._session.post(login_url, json={
-                'accountName': email,
-                'password': password,
-                'rememberMe': False,
-            }, headers={
-                'X-Requested-With': 'XMLHttpRequest',
-            })
+        if email is None or password is None:
+            return
 
-            self._session_id = rv.headers.get('X-Apple-Id-Session-Id', None)
-            self._scnt = rv.headers.get('scnt', None)
+        if self.authenticated:
+            # we don't want to login again
+            return
 
-            if rv.headers.get('X-Apple-TwoSV-Trust-Eligible'):
-                self.two_fa_request = True
-            else:
-                self.two_fa_request = False
+        login_url = '%s?widgetKey=%s' % (
+            LOGIN_URL,
+            self._get_service_key(),
+        )
+        rv = self._session.post(login_url, json={
+            'accountName': email,
+            'password': password,
+            'rememberMe': False,
+        }, headers={
+            'X-Requested-With': 'XMLHttpRequest',
+        })
 
-            # This is necessary because it sets some further cookies
-            rv = self._session.get(urljoin(API_BASE, 'wa'))
-            rv.raise_for_status()
-            # If we reach this point and it's no 2FA we are authenticated
-            if self.two_factor is False and self.authenticated is False:
-                self.authenticated = True
+        self._session_id = rv.headers.get('X-Apple-Id-Session-Id', None)
+        self._scnt = rv.headers.get('scnt', None)
+
+        if rv.headers.get('X-Apple-TwoSV-Trust-Eligible'):
+            self.two_fa_request = True
+        else:
+            self.two_fa_request = False
+
+        # This is necessary because it sets some further cookies
+        rv = self._session.get(urljoin(API_BASE, 'wa'))
+        rv.raise_for_status()
+        # If we reach this we are authenticated
+        if (self.two_fa_request is False or self.two_fa_done) \
+           and self.authenticated is False:
+            self.authenticated = True
 
     def two_factor(self, security_code):
         rv = self._session.post(TWOFA_URL, json={
-            'securityCode': { 'code': security_code },
+            'securityCode': {'code': security_code},
         }, headers={
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -82,8 +89,7 @@ class ItunesConnectClient(object):
                 'scnt': self._scnt
             })
         rv.raise_for_status()
-        # If we reach this point we have 2FA and then we are authenticated
-        self.authenticated = True
+        self.two_fa_done = True
 
     @classmethod
     def from_json(cls, data):
@@ -106,6 +112,10 @@ class ItunesConnectClient(object):
         if val is not None:
             rv.two_fa_request = val
 
+        val = data.get('two_fa_done')
+        if val is not None:
+            rv.two_fa_done = val
+
         val = data.get('authenticated')
         if val is not None:
             rv.authenticated = val
@@ -123,6 +133,7 @@ class ItunesConnectClient(object):
             'scnt': self._scnt,
             'session_id': self._session_id,
             'two_fa_request': self.two_fa_request,
+            'two_fa_done': self.two_fa_done,
             'authenticated': self.authenticated,
             'cookies': dict_from_cookiejar(self._session.cookies),
         }
@@ -176,11 +187,11 @@ class ItunesConnectClient(object):
                     seen.add(app['id'])
                     yield app
 
-    def iter_app_builds(self, app, team):
+    def iter_app_builds(self, app, team_id):
         """Given an app ID, this iterates over all the builds that exist
         for it.
         """
-        self._select_team(team['id'])
+        self._select_team(team_id)
 
         for platform in app['platforms']:
             rv = self._session.get(urljoin(
@@ -214,8 +225,9 @@ class ItunesConnectClient(object):
         rv.raise_for_status()
         return rv.json().get('data', {}).get('items', [])
 
-    def get_dsym_url(self, app_id, platform, version, build_id):
+    def get_dsym_url(self, app_id, team_id, platform, version, build_id):
         """Looks up the dsym URL for a given build"""
+        self._select_team(team_id)
         rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/%s/platforms/%s/trains/%s/builds/%s/details' % (
                 app_id, platform, version, build_id)))

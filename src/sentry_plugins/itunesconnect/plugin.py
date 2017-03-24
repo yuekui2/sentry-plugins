@@ -1,15 +1,7 @@
 from __future__ import absolute_import
 
 from datetime import timedelta
-from django.conf import settings
-from django import forms
-from django.core.urlresolvers import reverse
-from django.core.cache import cache
-from six.moves.urllib.parse import urlparse, quote
-from hashlib import md5
 
-from sentry import options
-from sentry.plugins import plugins
 from sentry.plugins.base.v1 import Plugin
 from sentry.plugins.base.configuration import react_plugin_config
 from sentry_plugins.utils import get_secret_field_config
@@ -22,6 +14,7 @@ from .endpoints.config import (
 )
 from .endpoints.security import ItunesConnectSecurityEndpoint
 from .models import Client
+
 
 class ItunesConnectPlugin(CorePluginMixin, Plugin):
     description = 'iTunes Connect Debug symbols sync service.'
@@ -52,6 +45,10 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         if key != 'enabled' and project:
             self.reset_client(project)
 
+    def reset_options(self, project=None, user=None):
+        super(Plugin, self).reset_options(project, user)
+        self.reset_client(project)
+
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
@@ -71,19 +68,15 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             project=project
         )
         client.itc_client = {}
-        client.teams = {}
-        client.apps_to_sync = {}
         client.save()
 
-    def store_client(self, project, client, force_store=False):
-        db_client, _ = Client.objects.get_or_create(
+    def store_client(self, project, client):
+        itc_client, _ = Client.objects.get_or_create(
             project=project
         )
-        # We only want to save the client to the database if we are not authenticated
-        # We force it only after entering the 2FA request
-        if client.authenticated is False or force_store:
-            db_client.itc_client = client.to_json(ensure_user_details=False)
-            db_client.save()
+        itc_client.itc_client = client.to_json(ensure_user_details=False)
+        itc_client.save()
+        return itc_client
 
     def get_project_urls(self):
         return [
@@ -133,4 +126,3 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
 
     def get_worker_queues(self):
         return ['itunesconnect']
-
