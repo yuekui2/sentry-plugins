@@ -9,7 +9,7 @@ class ItunesConnectSecurityEndpoint(PluginProjectEndpoint):
     def post(self, request, project, *args, **kwargs):
         try:
             securitycode = json.loads(request.body.decode('utf-8')).get('securitycode')
-            client = self.plugin.get_logged_in_client(project)
+            client = self.plugin.get_client(project)
             client.two_factor(securitycode)
             self.plugin.store_client(project=project, client=client)
             return self.respond({

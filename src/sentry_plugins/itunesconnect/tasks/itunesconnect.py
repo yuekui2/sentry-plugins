@@ -32,6 +32,13 @@ def get_itunes_connect_plugin(project):
     return None
 
 
+def get_client(plugin, project):
+    itc = plugin.get_client(project)
+    if itc.two_fa_done or itc.two_fa_request is False:
+        itc = plugin.login(project=project, client=itc)
+    return itc
+
+
 @instrumented_task(name='sentry.tasks.sync_dsyms_from_itunes_connect',
                    time_limit=90,
                    soft_time_limit=60)
@@ -68,7 +75,8 @@ def sync_dsyms_from_itunes_connect(**kwargs):
                 logger.warning('Initial sync not done yet')
                 return
 
-            itc = plugin.get_client(project)
+            itc = get_client(plugin=plugin, project=project)
+
             for team in itc_client.teams:
                 for app in team.get('apps', []):
                     if itc_client.is_app_active(app.get('id', None)):
@@ -96,7 +104,6 @@ def sync_dsyms_from_itunes_connect(**kwargs):
 def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
     project = get_project_from_id(project_id)
     plugin = get_itunes_connect_plugin(project)
-    itc = plugin.get_client(project)
     # if itunes plugin is not up and running we do nothing
     if plugin is None:
         return
@@ -104,6 +111,8 @@ def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
         return
     if not plugin.is_enabled(project):
         return
+
+    itc = get_client(plugin=plugin, project=project)
 
     dsym_app = DSymApp.objects.filter(
         sync_id=app['id']

@@ -47,7 +47,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
 
     def reset_options(self, project=None, user=None):
         super(Plugin, self).reset_options(project, user)
-        self.reset_client(project)
+        self.reset_client(project=project, full_reset=True)
 
     def is_configured(self, project, **kwargs):
         return all((self.get_option(k, project) for k in ('email', 'password')))
@@ -63,11 +63,14 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         except Exception as exc:
             raise PluginError(exc)
 
-    def reset_client(self, project):
+    def reset_client(self, project, full_reset=False):
         client, _ = Client.objects.get_or_create(
             project=project
         )
         client.itc_client = {}
+        if full_reset:
+            client.teams = {}
+            client.apps_to_sync = {}
         client.save()
 
     def store_client(self, project, client):
@@ -85,8 +88,7 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
             (r'^securitycode/', ItunesConnectSecurityEndpoint.as_view(plugin=self)),
         ]
 
-    def get_logged_in_client(self, project):
-        client = self.get_client(project=project)
+    def login(self, project, client):
         client.login(
             email=self.get_option('email', project),
             password=self.get_option('password', project)

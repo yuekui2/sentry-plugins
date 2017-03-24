@@ -54,11 +54,8 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             project=project
         )
         try:
-            client = self.plugin.get_logged_in_client(project=project)
-            if client.two_fa_request:
-                return self.respond({
-                    'twoFARequest': True,
-                })
+            client = self.plugin.get_client(project=project)
+            client = self.plugin.login(project=project, client=client)
             test_results = client.get_user_details()
         except Exception as exc:
             error = True
@@ -73,7 +70,14 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
             result = itc_client.get_teams_with_merged_apps()
             itc_client.save()
 
-        itc_client = self.plugin.store_client(project=project, client=client)
+        if client.authenticated is False or \
+           (client.first_login_attempt and client.authenticated):
+            itc_client = self.plugin.store_client(project=project, client=client)
+
+        if client.two_fa_request:
+            return self.respond({
+                'twoFARequest': True,
+            })
 
         return self.respond(
             self._add_meta_info(response={

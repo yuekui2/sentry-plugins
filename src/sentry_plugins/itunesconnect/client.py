@@ -35,6 +35,7 @@ class ItunesConnectClient(object):
         self.two_fa_request = None
         self.authenticated = False
         self.two_fa_done = False
+        self.first_login_attempt = False
 
     def login(self, email=None, password=None):
         if email is None or password is None:
@@ -68,9 +69,11 @@ class ItunesConnectClient(object):
         rv = self._session.get(urljoin(API_BASE, 'wa'))
         rv.raise_for_status()
         # If we reach this we are authenticated
-        if (self.two_fa_request is False or self.two_fa_done) \
-           and self.authenticated is False:
+        if (self.two_fa_request is False or self.two_fa_done):
             self.authenticated = True
+
+        if self.two_fa_request is False:
+            self.first_login_attempt = True
 
     def two_factor(self, security_code):
         rv = self._session.post(TWOFA_URL, json={
