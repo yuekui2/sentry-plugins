@@ -8,8 +8,6 @@ from sentry.utils import json
 
 from sentry_plugins.sessionstack.plugin import SessionStackPlugin
 
-import pytest
-
 
 EXPECTED_SESSION_URL = (
     'https://app.sessionstack.com/player/#/sessions/588778a6c5762c1d566653ff'
@@ -22,7 +20,6 @@ ACCESS_TOKENS_URL = (
 )
 
 
-@pytest.mark.xfail
 class SessionStackPluginTest(PluginTestCase):
     @fixture
     def plugin(self):
@@ -62,21 +59,24 @@ class SessionStackPluginTest(PluginTestCase):
             })
         )
 
+        self.plugin.enable(self.project)
         self.plugin.set_option('account_email', 'user@example.com', self.project)
         self.plugin.set_option('api_token', 'example-api-token', self.project)
         self.plugin.set_option('website_id', 0, self.project)
 
-        event_preprocessors = self.plugin.get_event_preprocessors(None)
-        add_sessionstack_context = event_preprocessors[0]
-
         event = {
             'project': self.project.id,
-            'extra': {
+            'contexts': {
                 'sessionstack': {
-                    'session_id': '588778a6c5762c1d566653ff'
+                    'session_id': '588778a6c5762c1d566653ff',
+                    'type': 'sessionstack'
                 }
-            }
+            },
+            'platform': 'javascript'
         }
+
+        event_preprocessors = self.plugin.get_event_preprocessors(event)
+        add_sessionstack_context = event_preprocessors[0]
 
         processed_event = add_sessionstack_context(event)
 

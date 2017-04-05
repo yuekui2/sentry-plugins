@@ -262,9 +262,11 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         if config.get('name'):
             client = self.get_client(actor)
             try:
-                client.get_repo(config['name'])
+                repo = client.get_repo(config['name'])
             except Exception as e:
                 self.raise_error(e)
+            else:
+                config['external_id'] = six.text_type(repo['id'])
         return config
 
     def get_webhook_secret(self, organization):
@@ -307,7 +309,7 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         else:
             return {
                 'name': data['name'],
-                'external_id': data['name'],
+                'external_id': data['external_id'],
                 'url': 'https://github.com/{}'.format(data['name']),
                 'config': {
                     'name': data['name'],
@@ -326,3 +328,16 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             if exc.code == 404:
                 return
             raise
+
+    def compare_commits(self, repo, start_sha, end_sha, actor=None):
+        if actor is None:
+            raise NotImplementedError('Cannot fetch commits anonymously')
+
+        client = self.get_client(actor)
+        # use config name because that is kept in sync via webhooks
+        name = repo.config['name']
+        try:
+            res = client.compare_commits(name, start_sha, end_sha)
+        except Exception as e:
+            self.raise_error(e)
+        return [{'id': c['sha'], 'repository': repo.name} for c in res['commits']]
