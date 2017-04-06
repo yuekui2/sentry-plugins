@@ -71,7 +71,7 @@ class PushEventWebhook(Webhook):
 
             try:
                 with transaction.atomic():
-                    c = Commit.objects.create(
+                    c, created = Commit.objects.get_or_create(
                         repository_id=repo.id,
                         organization_id=organization.id,
                         key=commit['id'],
@@ -81,6 +81,15 @@ class PushEventWebhook(Webhook):
                             commit['timestamp'],
                         ).astimezone(timezone.utc),
                     )
+                    if not created:
+                        c.update(
+                            message=commit['message'],
+                            author=author,
+                            date_added=dateutil.parser.parse(
+                                commit['timestamp'],
+                            ).astimezone(timezone.utc)
+                        )
+
                     for fname in commit['added']:
                         CommitFileChange.objects.create(
                             organization_id=organization.id,

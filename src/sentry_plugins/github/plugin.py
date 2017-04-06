@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import dateutil.parser
 import logging
 import six
 
@@ -12,6 +13,8 @@ from sentry.models import OrganizationOption
 from sentry.plugins.bases.issue2 import IssuePlugin2, IssueGroupActionEndpoint
 from sentry.plugins import providers
 from sentry.utils.http import absolute_uri
+from django.utils import timezone
+from sentry.models import Commit, CommitAuthor
 
 from sentry_plugins.base import CorePluginMixin
 from sentry_plugins.exceptions import ApiError, ApiUnauthorized
@@ -33,6 +36,44 @@ ERR_404 = (
     ' you have access to it and that Sentry is being allowed to read data from'
     ' this organization (Account Settings > Authorized Applications > Sentry).'
 )
+
+
+def backfill_commit(repo, commit):
+    author_email = commit['commit']['author']['email']
+    if '@' not in author_email:
+        author_email = u'{}@localhost'.format(
+            author_email[:65],
+        )
+
+    # TODO(dcramer): we need to deal with bad values here, but since
+    # its optional, lets just throw it out for now
+    if len(author_email) > 75:
+        author = None
+    else:
+        author = CommitAuthor.objects.get_or_create(
+            organization_id=repo.organization_id,
+            email=author_email,
+            defaults={
+                'name': commit['commit']['author']['name'][:128],
+            }
+        )[0]
+        if author.name != commit['commit']['author']['name']:
+            author.update(name=commit['commit']['author']['name'])
+
+    # We do not want to update here because the information that comes
+    # from the webhook is of higher quality
+    Commit.objects.create_or_update(
+        repository_id=repo.id,
+        key=commit['sha'],
+        organization_id=repo.organization_id,
+        values=dict(
+            message=commit['commit']['message'],
+            author=author,
+            date_added=dateutil.parser.parse(
+                commit['commit']['author']['date'],
+            ).astimezone(timezone.utc),
+        ),
+    )
 
 
 class GitHubMixin(object):
@@ -330,6 +371,13 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             raise
 
     def compare_commits(self, repo, start_sha, end_sha, actor=None):
+        return self._do_compare(repo, start_sha, end_sha, actor)
+
+    def compare_and_backfill_commits(self, repo, start_sha, end_sha, actor=None):
+        return self._do_compare(repo, start_sha, end_sha, actor,
+                                backfill=True)
+
+    def _do_compare(self, repo, start_sha, end_sha, actor=None, backfill=False):
         if actor is None:
             raise NotImplementedError('Cannot fetch commits anonymously')
 
@@ -340,4 +388,19 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             res = client.compare_commits(name, start_sha, end_sha)
         except Exception as e:
             self.raise_error(e)
+
+        if backfill and res['commits']:
+            # Only create commits that do not exist yet.  If no author is
+            # set we consider it a missing commit.  This happens for
+            # instance when refs are set
+            missing = set(Commit.objects.filter(
+                repository_id=repo.id,
+                key__in=[commit['sha'] for commit in res['commits']],
+                author__isnull=True
+            ).values_list('key', flat=True))
+
+            for commit in res['commits']:
+                if commit['sha'] in missing:
+                    backfill_commit(repo, commit)
+
         return [{'id': c['sha'], 'repository': repo.name} for c in res['commits']]
