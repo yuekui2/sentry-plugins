@@ -28,7 +28,9 @@ class GitHubClient(object):
             resp.raise_for_status()
         except HTTPError as e:
             raise ApiError.from_response(e.response)
-        return resp.json()
+
+        if resp.status_code != 204:
+            return resp.json()
 
     def request(self, method, path, data=None, params=None):
         headers = {
