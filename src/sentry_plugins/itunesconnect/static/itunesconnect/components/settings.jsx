@@ -1,5 +1,5 @@
 import React from 'react';
-import {i18n, IndicatorStore, plugins, Switch} from 'sentry';
+import {i18n, IndicatorStore, plugins, Switch, NumberConfirm} from 'sentry';
 
 class Settings extends plugins.BasePlugin.DefaultSettings {
   constructor(props) {
@@ -7,9 +7,11 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
 
     this.testConfig = this.testConfig.bind(this);
     this.fetchData = this.fetchData.bind(this);
+    this.sendAuthCode = this.sendAuthCode.bind(this);
 
     Object.assign(this.state, {
       testing: false,
+      showNumberConfirm: false,
       twoFARequest: false,
       appActivating: false,
       twoFactorEnabled: false,
@@ -31,6 +33,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   sendAuthCode(code) {
+    this.setState({
+      showNumberConfirm: false,
+    });
     this.api.request(`${this.getPluginEndpoint()}securitycode/`, {
       method: 'POST',
       data: {
@@ -54,10 +59,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       method: 'POST',
       success: (data) => {
         if (data.twoFARequest) {
-          let code = prompt('Please enter your code', '');
-          if (code !== null) {
-            this.sendAuthCode(code);
-          }
+          this.setState({
+            showNumberConfirm: true,
+          });
         } else {
           this.setState({
             testResults: data,
@@ -235,6 +239,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   render() {
     return (
       <div>
+        <NumberConfirm digits={6}
+          show={this.state.showNumberConfirm}
+          onFinished={this.sendAuthCode} />
         <div className="ref-itunesconnect-settings">
           {this.props.children}
         </div>
