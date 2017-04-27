@@ -32,7 +32,7 @@ class ItunesConnectTestConfigEndpoint(PluginProjectEndpoint):
         if len(itc_client.itc_client) == 0 and len(itc_client.teams) > 0:
             session_expired = True
         response.update({
-            'twoFactorEnabled': itc_client.itc_client.get('two_fa_request', False),
+            'twoFactorEnabled': itc_client.itc_client.get('two_fa_done', False),
             'sessionExpired': session_expired
         })
         return response

@@ -170,10 +170,10 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       <div className="row">
         <div className="col-md-12">
           <div className="alert alert-block alert-info">
-            Your account is using <strong>Two-Factor-Authententication</strong>.
+            Your account is using <strong>Two-Factor-Authententication</strong>.<br/>
             It is recommend that you create a seperate user for syncing you debug
             symbols.<br/>Sessions to iTunes Connect with Two-Factor-Authententication
-            enabled only last about 30 days. After that period of time you must
+            enabled only last about 30 days.<br/>After that period of time you must
             login again.
           </div>
         </div>
