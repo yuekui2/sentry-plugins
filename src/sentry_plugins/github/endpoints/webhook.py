@@ -23,6 +23,7 @@ from sentry.utils import json
 
 from sentry_plugins.exceptions import ApiError
 from sentry_plugins.github.client import GitHubClient
+from sentry_plugins.github.models import GitHubInstallation
 
 logger = logging.getLogger('sentry.webhooks')
 
@@ -291,3 +292,33 @@ class GithubWebhookEndpoint(View):
 
         handler()(organization, event)
         return HttpResponse(status=204)
+
+
+class GithubIntegrationsWebhookEndpoint(View):
+
+    @method_decorator(csrf_exempt)
+    def dispatch(self, request, *args, **kwargs):
+        if request.method != 'POST':
+            return HttpResponse(status=405)
+
+        return super(GithubIntegrationsWebhookEndpoint, self).dispatch(request, *args, **kwargs)
+
+    def post(self, request):
+        # TODO(jess): verify secret
+        body = six.binary_type(request.body)
+        data = json.loads(body.decode('utf-8'))
+        action = data['action']
+        installation = data['installation']
+        if action == 'created':
+            try:
+                with transaction.atomic():
+                    GitHubInstallation.objects.create(
+                        installation_id=data['installation']['id'],
+                        # TODO(jess): this may be different when installing on org
+                        account_name=installation['account']['login'],
+                        account_id=installation['account']['id'],
+                    )
+            except IntegrityError:
+                pass
+
+        return HttpResponse()

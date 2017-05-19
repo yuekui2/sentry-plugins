@@ -135,3 +135,17 @@ class GitHubClient(object):
                 end_sha,
             )
         )
+
+    def get_installations(self):
+        headers = {
+            # 'Authorization': 'token %s' % self.token,
+            'Accept': 'application/vnd.github.machine-man-preview+json',
+        }
+
+        params = {
+            'access_token': self.token,
+        }
+        # trying to use https://developer.github.com/v3/integrations/#list-installations-for-user
+        # but getting a 500 Internal Server Error :-/
+
+        return self._request('GET', '/user/installations', headers=headers, params=params)
