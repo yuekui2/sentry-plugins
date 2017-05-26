@@ -362,3 +362,22 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
                 self.raise_error(e)
             else:
                 return self._format_commits(repo, res['commits'])
+
+    def get_installations(self, actor):
+        client = self.get_client(actor)
+
+        res = client.get_installations()
+
+        # TODO(jess): this is confusing because there are
+        # many id fields but i think this is accurate:
+        # `target_id`: id of org/user
+        # `id`: the specific id of the specific installation
+        # `app_id`: the id of the integration (replaces deprecated
+        # `integration_id`)
+
+        return [{
+            'app_id': install['app_id'],
+            'installation_id': install['id'],
+            'external_id': install['target_id'],
+            'external_slug': install['account']['login'],
+        } for install in res['installations']]

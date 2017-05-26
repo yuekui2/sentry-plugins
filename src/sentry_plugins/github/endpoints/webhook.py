@@ -15,15 +15,14 @@ from django.views.generic import View
 from django.utils import timezone
 from simplejson import JSONDecodeError
 from sentry.models import (
-    Commit, CommitAuthor, CommitFileChange, Organization, OrganizationOption,
-    Repository, User
+    Commit, CommitAuthor, CommitFileChange, Installation,
+    Organization, OrganizationOption, Repository, User
 )
 from sentry.plugins.providers import RepositoryProvider
 from sentry.utils import json
 
 from sentry_plugins.exceptions import ApiError
 from sentry_plugins.github.client import GitHubClient
-from sentry_plugins.github.models import GitHubInstallation
 
 logger = logging.getLogger('sentry.webhooks')
 
@@ -304,7 +303,9 @@ class GithubIntegrationsWebhookEndpoint(View):
         return super(GithubIntegrationsWebhookEndpoint, self).dispatch(request, *args, **kwargs)
 
     def post(self, request):
-        # TODO(jess): verify secret
+        # TODO(jess):
+        #  - verify secret
+        #  - handle uninstalls
         body = six.binary_type(request.body)
         data = json.loads(body.decode('utf-8'))
         action = data['action']
@@ -312,11 +313,11 @@ class GithubIntegrationsWebhookEndpoint(View):
         if action == 'created':
             try:
                 with transaction.atomic():
-                    GitHubInstallation.objects.create(
-                        installation_id=data['installation']['id'],
-                        # TODO(jess): this may be different when installing on org
-                        account_name=installation['account']['login'],
-                        account_id=installation['account']['id'],
+                    Installation.objects.create(
+                        provider='github',
+                        installation_id=installation['id'],
+                        external_organization=installation['account']['login'],
+                        external_id=installation['account']['id'],
                     )
             except IntegrityError:
                 pass
