@@ -6,6 +6,7 @@ import hmac
 import logging
 import six
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, Http404
 from django.utils.crypto import constant_time_compare
@@ -36,13 +37,32 @@ def get_external_id(username):
 
 
 class Webhook(object):
-    def __call__(self, organization, event):
+    def __call__(self, event, organization=None):
         raise NotImplementedError
+
+
+class InstallationEventWebhook(Webhook):
+    # https://developer.github.com/v3/activity/events/types/#installationevent
+    def __call__(self, event, organization=None):
+        action = event['action']
+        installation = event['installation']
+        # TODO(jess): handle uninstalls
+        if action == 'created':
+            try:
+                with transaction.atomic():
+                    Installation.objects.create(
+                        provider='github',
+                        installation_id=installation['id'],
+                        external_organization=installation['account']['login'],
+                        external_id=installation['account']['id'],
+                    )
+            except IntegrityError:
+                pass
 
 
 class PushEventWebhook(Webhook):
     # https://developer.github.com/v3/activity/events/types/#pushevent
-    def __call__(self, organization, event):
+    def __call__(self, event, organization=None):
         authors = {}
 
         client = GitHubClient()
@@ -198,7 +218,7 @@ class PushEventWebhook(Webhook):
                 pass
 
 
-class GithubWebhookEndpoint(View):
+class GithubWebhookBase(View):
     _handlers = {
         'push': PushEventWebhook,
     }
@@ -226,7 +246,93 @@ class GithubWebhookEndpoint(View):
         if request.method != 'POST':
             return HttpResponse(status=405)
 
-        return super(GithubWebhookEndpoint, self).dispatch(request, *args, **kwargs)
+        return super(GithubWebhookBase, self).dispatch(request, *args, **kwargs)
+
+    def get_logging_data(self, organization):
+        pass
+
+    def get_kwargs(self, request, *args, **kwargs):
+        pass
+
+    def get_secret(self, organization):
+        raise NotImplementedError
+
+    def handle(self, request, organization=None):
+        secret = self.get_secret(organization)
+
+        if secret is None:
+            logger.error(
+                'github.webhook.missing-secret',
+                extra=self.get_logging_data(organization),
+            )
+            return HttpResponse(status=401)
+
+        body = six.binary_type(request.body)
+        if not body:
+            logger.error(
+                'github.webhook.missing-body',
+                extra=self.get_logging_data(organization),
+            )
+            return HttpResponse(status=400)
+
+        try:
+            handler = self.get_handler(request.META['HTTP_X_GITHUB_EVENT'])
+        except KeyError:
+            logger.error(
+                'github.webhook.missing-event',
+                extra=self.get_logging_data(organization),
+            )
+            return HttpResponse(status=400)
+
+        if not handler:
+            return HttpResponse(status=204)
+
+        try:
+            method, signature = request.META['HTTP_X_HUB_SIGNATURE'].split('=', 1)
+        except (KeyError, IndexError):
+            logger.error(
+                'github.webhook.missing-signature',
+                extra=self.get_logging_data(organization),
+            )
+            return HttpResponse(status=400)
+
+        if not self.is_valid_signature(method, body, self.get_secret(organization), signature):
+            logger.error(
+                'github.webhook.invalid-signature',
+                extra=self.get_logging_data(organization),
+            )
+            return HttpResponse(status=401)
+
+        try:
+            event = json.loads(body.decode('utf-8'))
+        except JSONDecodeError:
+            logger.error(
+                'github.webhook.invalid-json',
+                extra=self.get_logging_data(organization),
+                exc_info=True,
+            )
+            return HttpResponse(status=400)
+
+        handler()(event, organization=organization)
+        return HttpResponse(status=204)
+
+
+# non-integration version
+class GithubWebhookEndpoint(GithubWebhookBase):
+
+    def get_logging_data(self, organization):
+        return {
+            'organization_id': organization.id,
+        }
+
+    def get_kwargs(self, request, organization_id, **kwargs):
+        return
+
+    def get_secret(self, organization):
+        return OrganizationOption.objects.get_value(
+            organization=organization,
+            key='github:webhook_secret',
+        )
 
     def post(self, request, organization_id):
         try:
@@ -239,61 +345,14 @@ class GithubWebhookEndpoint(View):
             })
             return HttpResponse(status=400)
 
-        secret = OrganizationOption.objects.get_value(
-            organization=organization,
-            key='github:webhook_secret',
-        )
-        if secret is None:
-            logger.error('github.webhook.missing-secret', extra={
-                'organization_id': organization.id,
-            })
-            return HttpResponse(status=401)
-
-        body = six.binary_type(request.body)
-        if not body:
-            logger.error('github.webhook.missing-body', extra={
-                'organization_id': organization.id,
-            })
-            return HttpResponse(status=400)
-
-        try:
-            handler = self.get_handler(request.META['HTTP_X_GITHUB_EVENT'])
-        except KeyError:
-            logger.error('github.webhook.missing-event', extra={
-                'organization_id': organization.id,
-            })
-            return HttpResponse(status=400)
-
-        if not handler:
-            return HttpResponse(status=204)
-
-        try:
-            method, signature = request.META['HTTP_X_HUB_SIGNATURE'].split('=', 1)
-        except (KeyError, IndexError):
-            logger.error('github.webhook.missing-signature', extra={
-                'organization_id': organization.id,
-            })
-            return HttpResponse(status=400)
-
-        if not self.is_valid_signature(method, body, secret, signature):
-            logger.error('github.webhook.invalid-signature', extra={
-                'organization_id': organization.id,
-            })
-            return HttpResponse(status=401)
-
-        try:
-            event = json.loads(body.decode('utf-8'))
-        except JSONDecodeError:
-            logger.error('github.webhook.invalid-json', extra={
-                'organization_id': organization.id,
-            }, exc_info=True)
-            return HttpResponse(status=400)
-
-        handler()(organization, event)
-        return HttpResponse(status=204)
+        return self.handle(request, organization=organization)
 
 
-class GithubIntegrationsWebhookEndpoint(View):
+class GithubIntegrationsWebhookEndpoint(GithubWebhookBase):
+    _handlers = {
+        'push': PushEventWebhook,
+        'installation': InstallationEventWebhook,
+    }
 
     @method_decorator(csrf_exempt)
     def dispatch(self, request, *args, **kwargs):
@@ -302,24 +361,8 @@ class GithubIntegrationsWebhookEndpoint(View):
 
         return super(GithubIntegrationsWebhookEndpoint, self).dispatch(request, *args, **kwargs)
 
-    def post(self, request):
-        # TODO(jess):
-        #  - verify secret
-        #  - handle uninstalls
-        body = six.binary_type(request.body)
-        data = json.loads(body.decode('utf-8'))
-        action = data['action']
-        installation = data['installation']
-        if action == 'created':
-            try:
-                with transaction.atomic():
-                    Installation.objects.create(
-                        provider='github',
-                        installation_id=installation['id'],
-                        external_organization=installation['account']['login'],
-                        external_id=installation['account']['id'],
-                    )
-            except IntegrityError:
-                pass
+    def get_secret(self, organization):
+        return settings.GITHUB_INTEGRATION_HOOK_SECRET
 
-        return HttpResponse()
+    def post(self, request):
+        return self.handle(request)
