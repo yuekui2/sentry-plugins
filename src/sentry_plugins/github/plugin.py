@@ -16,7 +16,7 @@ from sentry.utils.http import absolute_uri
 from sentry_plugins.base import CorePluginMixin
 from sentry_plugins.exceptions import ApiError, ApiUnauthorized
 
-from .client import GitHubClient
+from .client import GitHubClient, GitHubIntegrationClient
 
 ERR_INTERNAL = (
     'An internal error occurred with the integration and the Sentry team has'
@@ -381,3 +381,14 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             'external_id': install['target_id'],
             'external_slug': install['account']['login'],
         } for install in res['installations']]
+
+    def get_repositories(self, installation):
+        client = GitHubIntegrationClient(installation)
+
+        res = client.get_repositories()
+        return [{
+            'name': '%s/%s' % (r['owner']['login'], r['name']),
+            'external_id': r['id'],
+            'url': r['url'],
+            'provider': 'github',
+        } for r in res['repositories']]

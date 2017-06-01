@@ -1,5 +1,10 @@
 from __future__ import absolute_import
 
+import calendar
+import datetime
+import jwt
+import time
+
 from requests.exceptions import HTTPError
 from django.conf import settings
 from sentry.http import build_session
@@ -147,3 +152,84 @@ class GitHubClient(object):
         }
 
         return self._request('GET', '/user/installations', headers=headers, params=params)
+
+
+class GitHubIntegrationClient(object):
+    url = 'https://api.github.com'
+
+    def __init__(self, installation):
+        self.installation = installation
+        self.token = None
+        self.expires_at = None
+
+    def get_token(self):
+        if not self.token or self.expires_at < datetime.datetime.utcnow():
+            res = self.create_token()
+            self.token = res['token']
+            self.expires_at = datetime.datetime.strptime(
+                res['expires_at'],
+                '%Y-%m-%dT%H:%M:%SZ',
+            )
+
+        return self.token
+
+    def get_jwt(self):
+        private_key = settings.GITHUB_INSTALLATION_PRIVATE_KEY
+
+        exp = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+        exp = calendar.timegm(exp.timetuple())
+        # Generate the JWT
+        payload = {
+            # issued at time
+            'iat': int(time.time()),
+            # JWT expiration time (10 minute maximum)
+            'exp': exp,
+            # Integration's GitHub identifier
+            'iss': settings.GITHUB_INTEGRATION_APP_ID,
+        }
+
+        return jwt.encode(payload, private_key, algorithm='RS256')
+
+    def request(self, method, path, headers=None, data=None, params=None):
+        if headers is None:
+            headers = {
+                'Authorization': 'token %s' % self.get_token(),
+                # TODO(jess): remove this whenever it's out of preview
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+            }
+        session = build_session()
+        try:
+            resp = getattr(session, method.lower())(
+                url='{}{}'.format(self.url, path),
+                headers=headers,
+                json=data,
+                params=params,
+                allow_redirects=True,
+            )
+            resp.raise_for_status()
+        except HTTPError as e:
+            raise ApiError.from_response(e.response)
+
+        if resp.status_code == 204:
+            return {}
+
+        return resp.json()
+
+    def create_token(self):
+        return self.request(
+            'POST',
+            '/installations/{}/access_tokens'.format(
+                self.installation.installation_id,
+            ),
+            headers={
+                'Authorization': 'Bearer %s' % self.get_jwt(),
+                # TODO(jess): remove this whenever it's out of preview
+                'Accept': 'application/vnd.github.machine-man-preview+json',
+            },
+        )
+
+    def get_repositories(self):
+        return self.request(
+            'GET',
+            '/installation/repositories',
+        )
