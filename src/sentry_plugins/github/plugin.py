@@ -391,4 +391,8 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             'external_id': r['id'],
             'url': r['html_url'],
             'provider': 'github',
+            'config': {
+                'name': '%s/%s' % (r['owner']['login'], r['name']),
+                'installation_id': installation.id,
+            }
         } for r in res['repositories']]
