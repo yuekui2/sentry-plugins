@@ -389,6 +389,6 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         return [{
             'name': '%s/%s' % (r['owner']['login'], r['name']),
             'external_id': r['id'],
-            'url': r['url'],
+            'url': r['html_url'],
             'provider': 'github',
         } for r in res['repositories']]
