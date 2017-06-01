@@ -61,8 +61,7 @@ class InstallationEventWebhook(Webhook):
 
 
 class PushEventWebhook(Webhook):
-    # https://developer.github.com/v3/activity/events/types/#pushevent
-    def __call__(self, event, organization=None):
+    def _handle(self, event, organization):
         authors = {}
 
         client = GitHubClient()
@@ -216,6 +215,22 @@ class PushEventWebhook(Webhook):
                         )
             except IntegrityError:
                 pass
+
+    # https://developer.github.com/v3/activity/events/types/#pushevent
+    def __call__(self, event, organization=None):
+        if organization is None:
+            if 'installation' not in event:
+                return
+            inst = Installation.objects.get(
+                installation_id=event['installation']['id'],
+                provider='github',
+            )
+            organizations = list(inst.organizations.all())
+        else:
+            organizations = [organization]
+
+        for org in organizations:
+            self._handle(event, org)
 
 
 class GithubWebhookBase(View):
