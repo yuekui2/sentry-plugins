@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from sentry.app import locks
 from sentry.exceptions import InvalidIdentity, PluginError
-from sentry.models import OrganizationOption
+from sentry.models import Installation, OrganizationOption
 from sentry.plugins.bases.issue2 import IssuePlugin2, IssueGroupActionEndpoint
 from sentry.plugins import providers
 from sentry.utils.http import absolute_uri
@@ -342,10 +342,16 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         } for c in commit_list]
 
     def compare_commits(self, repo, start_sha, end_sha, actor=None):
-        if actor is None:
+        installation_id = repo.config.get('installation_id')
+        if installation_id:
+            client = GitHubIntegrationClient(
+                Installation.objects.get(installation_id=installation_id),
+            )
+        elif actor is not None:
+            client = self.get_client(actor)
+        else:
             raise NotImplementedError('Cannot fetch commits anonymously')
 
-        client = self.get_client(actor)
         # use config name because that is kept in sync via webhooks
         name = repo.config['name']
         if start_sha is None:
