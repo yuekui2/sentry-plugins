@@ -412,6 +412,6 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
             'provider': 'github',
             'config': {
                 'name': '%s/%s' % (r['owner']['login'], r['name']),
-                'installation_id': installation.id,
+                'installation_id': installation.installation_id,
             }
         } for r in res['repositories']]

@@ -60,6 +60,39 @@ class InstallationEventWebhook(Webhook):
                 pass
 
 
+class InstallationRepositoryEventWebhook(Webhook):
+    # https://developer.github.com/v3/activity/events/types/#installationrepositoriesevent
+    def __call__(self, event, organization=None):
+        installation = event['installation']
+
+        inst = Installation.objects.get(installation_id=installation['id'])
+
+        repos_added = event['repositories_added']
+
+        if repos_added:
+            for org_id in inst.organizations.values_list('id', flat=True):
+                for r in repos_added:
+                    config = {
+                        'name': r['full_name'],
+                        'installation_id': inst.installation_id,
+                    }
+                    repo, created = Repository.objects.get_or_create(
+                        organization_id=org_id,
+                        name=r['full_name'],
+                        provider='github',
+                        external_id=r['id'],
+                        defaults={
+                            'url': 'https://github.com/%s' % (r['full_name'],),
+                            'config': config,
+                        }
+                    )
+                    if not created:
+                        repo.config.update(config)
+                        repo.save()
+        # TODO(jess): what do we want to do when they're removed?
+        # maybe signify that we've lost access but not deleted?
+
+
 class PushEventWebhook(Webhook):
     def _handle(self, event, organization):
         authors = {}
@@ -367,6 +400,7 @@ class GithubIntegrationsWebhookEndpoint(GithubWebhookBase):
     _handlers = {
         'push': PushEventWebhook,
         'installation': InstallationEventWebhook,
+        'installation_repositories': InstallationRepositoryEventWebhook,
     }
 
     @method_decorator(csrf_exempt)
