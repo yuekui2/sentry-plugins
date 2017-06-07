@@ -6,6 +6,8 @@ import six
 from rest_framework.response import Response
 from uuid import uuid4
 
+from social_auth.models import UserSocialAuth
+
 from sentry.app import locks
 from sentry.exceptions import InvalidIdentity, PluginError
 from sentry.models import Installation, OrganizationOption
@@ -370,7 +372,18 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
                 return self._format_commits(repo, res['commits'])
 
     def get_installations(self, actor):
-        client = self.get_client(actor)
+        if not actor.is_authenticated():
+            raise PluginError(ERR_UNAUTHORIZED)
+
+        auth = UserSocialAuth.objects.filter(
+            user=actor,
+            provider='github_apps',
+        ).first()
+
+        if not auth:
+            raise PluginError(ERR_UNAUTHORIZED)
+
+        client = GitHubClient(token=auth.tokens['access_token'])
 
         res = client.get_installations()
 
