@@ -6,6 +6,8 @@ import six
 from rest_framework.response import Response
 from uuid import uuid4
 
+from django.conf import settings
+
 from social_auth.models import UserSocialAuth
 
 from sentry.app import locks
@@ -244,7 +246,27 @@ class GitHubPlugin(CorePluginMixin, GitHubMixin, IssuePlugin2):
 class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
     name = 'GitHub'
     auth_provider = 'github'
+    installation_auth_provider = 'github_apps'
+    has_installations = True
     logger = logging.getLogger('sentry.plugins.github')
+
+    def get_install_url(self):
+        return settings.GITHUB_APPS_INSTALL_URL
+
+    def needs_auth(self, user, **kwargs):
+        """
+        Return ``True`` if the authenticated user needs to associate an auth
+        service before performing actions with this provider.
+        """
+        for_installation = kwargs.get('for_installation', False)
+
+        if not user.is_authenticated():
+            return True
+
+        return not UserSocialAuth.objects.filter(
+            user=user,
+            provider=self.installation_auth_provider if for_installation else self.auth_provider,
+        ).exists()
 
     def get_config(self):
         return [{
