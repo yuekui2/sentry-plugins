@@ -211,7 +211,6 @@ class InstallationPushEventWebhookTest(APITestCase):
 
         inst = Installation.objects.create(
             provider='github',
-            app_id='12345',
             installation_id='12345',
             external_id='987612345',
             external_organization='dummyorg',
