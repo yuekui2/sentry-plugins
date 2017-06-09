@@ -71,3 +71,4 @@ def pytest_configure(config):
     settings.BITBUCKET_CONSUMER_SECRET = '123'
     settings.GITHUB_APP_ID = 'abc'
     settings.GITHUB_API_SECRET = '123'
+    settings.GITHUB_INTEGRATION_HOOK_SECRET = 'b3002c3e321d4b7880360d397db2ccfd'
