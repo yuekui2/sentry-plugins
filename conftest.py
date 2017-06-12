@@ -15,8 +15,10 @@ pytest_plugins = ['sentry.utils.pytest']
 
 def pytest_configure(config):
     settings.INSTALLED_APPS = tuple(settings.INSTALLED_APPS) + (
+        'sentry_plugins.amazon_sqs',
         'sentry_plugins.asana',
         'sentry_plugins.bitbucket',
+        'sentry_plugins.heroku',
         'sentry_plugins.hipchat_ac',
         'sentry_plugins.github',
         'sentry_plugins.gitlab',
@@ -33,10 +35,12 @@ def pytest_configure(config):
 
     # TODO(dcramer): we need a PluginAPITestCase that can do register/unregister
     from sentry.plugins import plugins
+    from sentry_plugins.amazon_sqs.plugin import AmazonSQSPlugin
     from sentry_plugins.asana.plugin import AsanaPlugin
     from sentry_plugins.bitbucket.plugin import BitbucketPlugin
     from sentry_plugins.github.plugin import GitHubPlugin
     from sentry_plugins.gitlab.plugin import GitLabPlugin
+    from sentry_plugins.heroku.plugin import HerokuPlugin
     from sentry_plugins.hipchat_ac.plugin import HipchatPlugin
     from sentry_plugins.itunesconnect.plugin import ItunesConnectPlugin
     from sentry_plugins.jira.plugin import JiraPlugin
@@ -47,10 +51,12 @@ def pytest_configure(config):
     from sentry_plugins.sessionstack.plugin import SessionStackPlugin
     from sentry_plugins.slack.plugin import SlackPlugin
     from sentry_plugins.victorops.plugin import VictorOpsPlugin
+    plugins.register(AmazonSQSPlugin)
     plugins.register(AsanaPlugin)
     plugins.register(BitbucketPlugin)
     plugins.register(GitHubPlugin)
     plugins.register(GitLabPlugin)
+    plugins.register(HerokuPlugin)
     plugins.register(HipchatPlugin)
     plugins.register(ItunesConnectPlugin)
     plugins.register(JiraPlugin)

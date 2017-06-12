@@ -18,6 +18,7 @@ from sentry.models import (
     Commit, CommitAuthor, CommitFileChange, Organization, OrganizationOption,
     Repository, User
 )
+from sentry.plugins.providers import RepositoryProvider
 from sentry.utils import json
 
 from sentry_plugins.exceptions import ApiError
@@ -56,8 +57,17 @@ class PushEventWebhook(Webhook):
         except Repository.DoesNotExist:
             raise Http404()
 
+        # We need to track GitHub's "full_name" which is the repository slug.
+        # This is needed to access the API since `external_id` isn't sufficient.
+        if repo.config.get('name') != event['repository']['full_name']:
+            repo.config['name'] = event['repository']['full_name']
+            repo.save()
+
         for commit in event['commits']:
             if not commit['distinct']:
+                continue
+
+            if RepositoryProvider.should_ignore_commit(commit['message']):
                 continue
 
             author_email = commit['author']['email']
@@ -67,54 +77,56 @@ class PushEventWebhook(Webhook):
                 )
             # try to figure out who anonymous emails are
             elif is_anonymous_email(author_email):
-                gh_username = commit['author']['username']
-                external_id = get_external_id(gh_username)
-                if gh_username in gh_username_cache:
-                    author_email = gh_username_cache[gh_username] or author_email
-                else:
-                    try:
-                        commit_author = CommitAuthor.objects.get(
-                            external_id=external_id,
-                            organization_id=organization.id,
-                        )
-                    except CommitAuthor.DoesNotExist:
-                        commit_author = None
-
-                    if commit_author is not None and not is_anonymous_email(commit_author.email):
-                        author_email = commit_author.email
-                        gh_username_cache[gh_username] = author_email
+                gh_username = commit['author'].get('username')
+                # bot users don't have usernames
+                if gh_username:
+                    external_id = get_external_id(gh_username)
+                    if gh_username in gh_username_cache:
+                        author_email = gh_username_cache[gh_username] or author_email
                     else:
                         try:
-                            gh_user = client.request_no_auth('GET', '/users/%s' % gh_username)
-                        except ApiError as exc:
-                            logger.exception(six.text_type(exc))
-                        else:
-                            # even if we can't find a user, set to none so we
-                            # don't re-query
-                            gh_username_cache[gh_username] = None
-                            try:
-                                user = User.objects.filter(
-                                    social_auth__provider='github',
-                                    social_auth__uid=gh_user['id'],
-                                    org_memberships=organization,
-                                )[0]
-                            except IndexError:
-                                pass
-                            else:
-                                author_email = user.email
-                                gh_username_cache[gh_username] = author_email
-                                if commit_author is not None:
-                                    try:
-                                        with transaction.atomic():
-                                            commit_author.update(
-                                                email=author_email,
-                                                external_id=external_id,
-                                            )
-                                    except IntegrityError:
-                                        pass
+                            commit_author = CommitAuthor.objects.get(
+                                external_id=external_id,
+                                organization_id=organization.id,
+                            )
+                        except CommitAuthor.DoesNotExist:
+                            commit_author = None
 
-                    if commit_author is not None:
-                        authors[author_email] = commit_author
+                        if commit_author is not None and not is_anonymous_email(commit_author.email):
+                            author_email = commit_author.email
+                            gh_username_cache[gh_username] = author_email
+                        else:
+                            try:
+                                gh_user = client.request_no_auth('GET', '/users/%s' % gh_username)
+                            except ApiError as exc:
+                                logger.exception(six.text_type(exc))
+                            else:
+                                # even if we can't find a user, set to none so we
+                                # don't re-query
+                                gh_username_cache[gh_username] = None
+                                try:
+                                    user = User.objects.filter(
+                                        social_auth__provider='github',
+                                        social_auth__uid=gh_user['id'],
+                                        org_memberships=organization,
+                                    )[0]
+                                except IndexError:
+                                    pass
+                                else:
+                                    author_email = user.email
+                                    gh_username_cache[gh_username] = author_email
+                                    if commit_author is not None:
+                                        try:
+                                            with transaction.atomic():
+                                                commit_author.update(
+                                                    email=author_email,
+                                                    external_id=external_id,
+                                                )
+                                        except IntegrityError:
+                                            pass
+
+                        if commit_author is not None:
+                            authors[author_email] = commit_author
 
             # TODO(dcramer): we need to deal with bad values here, but since
             # its optional, lets just throw it out for now
@@ -134,9 +146,11 @@ class PushEventWebhook(Webhook):
                 if author.name != commit['author']['name']:
                     update_kwargs['name'] = commit['author']['name']
 
-                external_id = get_external_id(commit['author']['username'])
-                if author.external_id != external_id and not is_anonymous_email(author.email):
-                    update_kwargs['external_id'] = external_id
+                gh_username = commit['author'].get('username')
+                if gh_username:
+                    external_id = get_external_id(gh_username)
+                    if author.external_id != external_id and not is_anonymous_email(author.email):
+                        update_kwargs['external_id'] = external_id
 
                 if update_kwargs:
                     try:
