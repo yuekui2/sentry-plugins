@@ -348,6 +348,10 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         if actor is None:
             raise NotImplementedError('Cannot delete a repository anonymously')
 
+        # there isn't a webhook to delete for integrations
+        if not repo.config.get('webhook_id') and repo.config.get('installation_id'):
+            return
+
         client = self.get_client(actor)
         try:
             client.delete_hook(repo.config['name'], repo.config['webhook_id'])
