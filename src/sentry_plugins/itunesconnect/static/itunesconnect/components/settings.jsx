@@ -119,7 +119,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
         <div className="row">
           <div className="col-xs-12 event-details">
             <h3 className="truncate">{team.name}</h3>
-            <div className="event-message">{team.roles.join(', ')}</div>
+            <div className="event-message" />
             <div className="event-extra">
               <ul>
                 <li>

@@ -16,6 +16,10 @@ LOGIN_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/signin')
 TWOFA_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/verify/trusteddevice/securitycode')
 TRUST_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/2sv/trust')
 
+OLYMPUS_BASE_URL = 'https://olympus.itunes.apple.com/'
+ITC_SERVICE_KEY_URL = urljoin(OLYMPUS_BASE_URL, '/v1/app/config?hostname=itunesconnect.apple.compile')
+OLYMPUS_SESSION_URL = urljoin(OLYMPUS_BASE_URL, '/v1/session')
+
 _isk_re = re.compile(r'itcServiceKey\s+=\s+["\'](.*)["\']')
 
 
@@ -45,17 +49,17 @@ class ItunesConnectClient(object):
             # we don't want to login again
             return
 
-        login_url = '%s?widgetKey=%s' % (
-            LOGIN_URL,
-            self._get_service_key(),
-        )
-        rv = self._session.post(login_url, json={
+        self._get_service_key()
+
+        rv = self._session.post(LOGIN_URL, json={
             'accountName': email,
             'password': password,
             'rememberMe': False,
         }, headers={
             'X-Requested-With': 'XMLHttpRequest',
+            'X-Apple-Widget-Key': self._service_key
         })
+        # TODO possibly add cookie header see https://github.com/fastlane/fastlane/blob/master/spaceship/lib/spaceship/client.rb#L452
 
         self._session_id = rv.headers.get('X-Apple-Id-Session-Id', None)
         self._scnt = rv.headers.get('scnt', None)
@@ -64,10 +68,9 @@ class ItunesConnectClient(object):
             self.two_fa_request = True
         else:
             self.two_fa_request = False
+            # This is necessary because it sets some further cookies
+            self.refresh_user_details()
 
-        # This is necessary because it sets some further cookies
-        rv = self._session.get(urljoin(API_BASE, 'wa'))
-        rv.raise_for_status()
         # If we reach this we are authenticated
         if (self.two_fa_request is False or self.two_fa_done):
             self.authenticated = True
@@ -75,24 +78,34 @@ class ItunesConnectClient(object):
         if self.two_fa_request is False:
             self.first_login_attempt = True
 
+    def needs_two_fa(self):
+        return self.two_fa_request
+
+    def _get_itc_service_key(self):
+        rv = self._session.get(ITC_SERVICE_KEY_URL)
+        rv.raise_for_status()
+        data = rv.json()['data']
+        self._service_key = data['authServiceKey']
+
+    def _request_headers(self):
+        return {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Apple-Widget-Key': self._service_key,
+            'X-Apple-Id-Session-Id': self._session_id,
+            'scnt': self._scnt
+        }
+
     def two_factor(self, security_code):
         rv = self._session.post(TWOFA_URL, json={
             'securityCode': {'code': security_code},
-        }, headers={
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-Apple-Id-Session-Id': self._session_id,
-            'scnt': self._scnt
-        })
+        }, headers=self._request_headers())
         rv.raise_for_status()
-
         if rv.status_code == 204:
-            rv = self._session.get(TRUST_URL, headers={
-                'X-Apple-Id-Session-Id': self._session_id,
-                'scnt': self._scnt
-            })
+            rv = self._session.get(TRUST_URL, headers=self._request_headers())
         rv.raise_for_status()
         self.two_fa_done = True
+        self.authenticated = True
 
     @classmethod
     def from_json(cls, data):
@@ -151,34 +164,40 @@ class ItunesConnectClient(object):
 
     def refresh_user_details(self):
         """Refreshes the user details."""
-        rv = self._session.get(USER_DETAILS_URL)
-        rv.raise_for_status()
-        data = rv.json()['data']
+
         teams = []
         apps = []
-        for acnt in data['associatedAccounts']:
-            team_id = acnt['contentProvider']['contentProviderId']
-            apps.append(self._list_apps(team_id, data['sessionToken']['dsId']))
+
+        rv = self._session.get(OLYMPUS_SESSION_URL)
+        rv.raise_for_status()
+        data = rv.json()
+
+        rv_user = self._session.get(USER_DETAILS_URL)
+        rv_user.raise_for_status()
+        data_user = rv_user.json()['data']
+
+        for acnt in data['availableProviders']:
+            team_id = acnt['providerId']
+            apps.append(self._list_apps(team_id, data_user['sessionToken']['dsId']))
 
         for app in apps:
-            for acnt in data['associatedAccounts']:
-                team_id = acnt['contentProvider']['contentProviderId']
+            for acnt in data['availableProviders']:
+                team_id = acnt['providerId']
                 if team_id == app[0]:
                     teams.append({
                         'id': team_id,
-                        'name': acnt['contentProvider']['name'],
-                        'roles': acnt['roles'],
+                        'name': acnt['name'],
                         'apps': app[1],
                     })
 
         self._user_details = {
             'teams': teams,
             'session': {
-                'ds_id': data['sessionToken']['dsId']
+                'ds_id': data_user['sessionToken']['dsId']
             },
-            'email': data['userName'],
-            'name': data['displayName'],
-            'user_id': data['userId'],
+            'email': data['user']['emailAddress'],
+            'name': data['user']['fullName'],
+            'user_id': data['user']['prsId'],
         }
 
     def iter_apps(self):
@@ -200,7 +219,9 @@ class ItunesConnectClient(object):
             rv = self._session.get(urljoin(
                 API_BASE, 'ra/apps/%s/buildHistory?platform=%s' % (
                     app['id'], platform)))
+
             rv.raise_for_status()
+
             trains = rv.json()['data']['trains']
             for train in trains:
                 if train.get('items') is None:
@@ -252,6 +273,7 @@ class ItunesConnectClient(object):
             return
         if ds_id is None:
             ds_id = self.get_user_details()['session']['ds_id']
+
         rv = self._session.post(urljoin(
             API_BASE, 'ra/v1/session/webSession'), json={
             'contentProviderId': team_id,
@@ -267,6 +289,7 @@ class ItunesConnectClient(object):
             API_BASE, 'ra/apps/manageyourapps/summary/v2'))
         rv.raise_for_status()
         apps = rv.json()['data']['summaries']
+
         rv = []
         for app in apps:
             platforms = set()

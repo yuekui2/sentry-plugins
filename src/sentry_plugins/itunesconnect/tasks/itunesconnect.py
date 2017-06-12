@@ -104,6 +104,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
 def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
     project = get_project_from_id(project_id)
     plugin = get_itunes_connect_plugin(project)
+
     # if itunes plugin is not up and running we do nothing
     if plugin is None:
         return
