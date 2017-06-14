@@ -6,7 +6,6 @@ import hmac
 import logging
 import six
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, Http404
 from django.utils.crypto import constant_time_compare
@@ -24,6 +23,7 @@ from sentry.utils import json
 
 from sentry_plugins.exceptions import ApiError
 from sentry_plugins.github.client import GitHubClient
+from sentry_plugins.github import GITHUB_INTEGRATION_HOOK_SECRET
 
 logger = logging.getLogger('sentry.webhooks')
 
@@ -411,7 +411,7 @@ class GithubIntegrationsWebhookEndpoint(GithubWebhookBase):
         return super(GithubIntegrationsWebhookEndpoint, self).dispatch(request, *args, **kwargs)
 
     def get_secret(self, organization):
-        return settings.GITHUB_INTEGRATION_HOOK_SECRET
+        return GITHUB_INTEGRATION_HOOK_SECRET
 
     def post(self, request):
         return self.handle(request)

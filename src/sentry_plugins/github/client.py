@@ -10,6 +10,9 @@ from django.conf import settings
 from sentry.http import build_session
 
 from sentry_plugins.exceptions import ApiError
+from sentry_plugins.github import (
+    GITHUB_INTEGRATION_PRIVATE_KEY, GITHUB_INTEGRATION_APP_ID
+)
 
 
 class GitHubClientBase(object):
@@ -180,8 +183,6 @@ class GitHubIntegrationClient(GitHubClientBase):
         return self.token
 
     def get_jwt(self):
-        private_key = settings.GITHUB_INSTALLATION_PRIVATE_KEY
-
         exp = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
         exp = calendar.timegm(exp.timetuple())
         # Generate the JWT
@@ -191,10 +192,10 @@ class GitHubIntegrationClient(GitHubClientBase):
             # JWT expiration time (10 minute maximum)
             'exp': exp,
             # Integration's GitHub identifier
-            'iss': settings.GITHUB_INTEGRATION_APP_ID,
+            'iss': GITHUB_INTEGRATION_APP_ID,
         }
 
-        return jwt.encode(payload, private_key, algorithm='RS256')
+        return jwt.encode(payload, GITHUB_INTEGRATION_PRIVATE_KEY, algorithm='RS256')
 
     def request(self, method, path, headers=None, data=None, params=None):
         if headers is None:

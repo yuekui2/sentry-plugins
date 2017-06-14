@@ -32,6 +32,7 @@ def pytest_configure(config):
         'sentry_plugins.victorops',
     )
 
+    from sentry import options
     # TODO(dcramer): we need a PluginAPITestCase that can do register/unregister
     from sentry.plugins import plugins
     from sentry_plugins.amazon_sqs.plugin import AmazonSQSPlugin
@@ -71,4 +72,5 @@ def pytest_configure(config):
     settings.BITBUCKET_CONSUMER_SECRET = '123'
     settings.GITHUB_APP_ID = 'abc'
     settings.GITHUB_API_SECRET = '123'
-    settings.GITHUB_INTEGRATION_HOOK_SECRET = 'b3002c3e321d4b7880360d397db2ccfd'
+    # this isn't the real secret
+    options.set('plugins.github.integration_hook_secret', 'b3002c3e321d4b7880360d397db2ccfd')
