@@ -70,7 +70,7 @@ class PushEventWebhook(Webhook):
                         organization_id=organization.id,
                         email=author_email,
                         defaults={
-                            'name': commit['author']['raw'].split('<')[0]
+                            'name': commit['author']['raw'].split('<')[0].strip()
                         }
                     )[0]
                 else:
