@@ -55,7 +55,7 @@ class PushEventWebhook(Webhook):
             repo.save()
 
         for change in event['push']['changes']:
-            for commit in change['commits']:
+            for commit in change.get('commits', []):
                 if RepositoryProvider.should_ignore_commit(commit['message']):
                     continue
 
