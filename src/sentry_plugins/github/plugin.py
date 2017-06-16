@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from social_auth.models import UserSocialAuth
 
+from sentry import options
 from sentry.app import locks
 from sentry.exceptions import InvalidIdentity, PluginError
 from sentry.models import Installation, OrganizationOption
@@ -17,7 +18,6 @@ from sentry.utils.http import absolute_uri
 
 from sentry_plugins.base import CorePluginMixin
 from sentry_plugins.exceptions import ApiError, ApiUnauthorized
-from sentry_plugins.github import GITHUB_APPS_INSTALL_URL
 
 from .client import GitHubClient, GitHubIntegrationClient
 
@@ -250,7 +250,7 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
     logger = logging.getLogger('sentry.plugins.github')
 
     def get_install_url(self):
-        return GITHUB_APPS_INSTALL_URL
+        return options.get('plugins.github.apps-install-url')
 
     def needs_auth(self, user, **kwargs):
         """

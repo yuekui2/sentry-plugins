@@ -14,6 +14,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import View
 from django.utils import timezone
 from simplejson import JSONDecodeError
+from sentry import options
 from sentry.models import (
     Commit, CommitAuthor, CommitFileChange, Installation,
     Organization, OrganizationOption, Repository, User
@@ -23,7 +24,6 @@ from sentry.utils import json
 
 from sentry_plugins.exceptions import ApiError
 from sentry_plugins.github.client import GitHubClient
-from sentry_plugins.github import GITHUB_INTEGRATION_HOOK_SECRET
 
 logger = logging.getLogger('sentry.webhooks')
 
@@ -411,7 +411,7 @@ class GithubIntegrationsWebhookEndpoint(GithubWebhookBase):
         return super(GithubIntegrationsWebhookEndpoint, self).dispatch(request, *args, **kwargs)
 
     def get_secret(self, organization):
-        return GITHUB_INTEGRATION_HOOK_SECRET
+        return options.get('plugins.github.integration-hook-secret')
 
     def post(self, request):
         return self.handle(request)

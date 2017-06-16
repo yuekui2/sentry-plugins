@@ -1,15 +1,30 @@
 from __future__ import absolute_import
 
-from sentry import options
+from sentry.options import (
+    FLAG_PRIORITIZE_DISK, FLAG_REQUIRED, register
+)
 
 from sentry_plugins.base import assert_package_not_installed
 
 assert_package_not_installed('sentry-github')
 
-try:
-    GITHUB_INTEGRATION_APP_ID = options.get('plugins.github.integration_app_id')
-    GITHUB_INTEGRATION_PRIVATE_KEY = options.get('plugins.github.integration_private_key')
-    GITHUB_INTEGRATION_HOOK_SECRET = options.get('plugins.github.integration_hook_secret')
-    GITHUB_APPS_INSTALL_URL = options.get('plugins.github.apps_install_url')
-except KeyError:
-    raise RuntimeError('Github integrations not properly configured')
+# Plugins
+register('plugins.github.integration-private-key',
+    default='',
+    flags=FLAG_REQUIRED | FLAG_PRIORITIZE_DISK,
+)
+register(
+    'plugins.github.integration-hook-secret',
+    default='',
+    flags=FLAG_REQUIRED | FLAG_PRIORITIZE_DISK,
+)
+register(
+    'plugins.github.integration-app-id',
+    default=0,
+    flags=FLAG_REQUIRED | FLAG_PRIORITIZE_DISK,
+)
+register(
+    'plugins.github.apps-install-url',
+    default='',
+    flags=FLAG_REQUIRED | FLAG_PRIORITIZE_DISK,
+)
