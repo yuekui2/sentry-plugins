@@ -43,7 +43,7 @@ class BitbucketClient(object):
 
         if resp.status_code == 204:
             return {}
-        
+
         if json:
             return resp.json()
         else:
