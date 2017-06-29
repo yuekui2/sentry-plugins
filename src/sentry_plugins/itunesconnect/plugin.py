@@ -9,10 +9,9 @@ from sentry.exceptions import PluginError
 
 from sentry_plugins.base import CorePluginMixin
 from .client import ItunesConnectClient
-from .endpoints.config import (
+from .endpoints.itunesconnect import (
     ItunesConnectTestConfigEndpoint, ItunesConnectAppSyncEndpoint
 )
-from .endpoints.security import ItunesConnectSecurityEndpoint
 from .models import Client
 
 
@@ -53,11 +52,18 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         return all((self.get_option(k, project) for k in ('email', 'password')))
 
     def get_client(self, project):
+        client, _ = Client.objects.get_or_create(
+            project=project
+        )
+        return client
+
+    def get_api_client(self, project):
         try:
             stored_client, _ = Client.objects.get_or_create(
                 project=project
             )
-            if stored_client.itc_client:
+            if (stored_client.itc_client and
+               stored_client.itc_client.get('authenticated')):
                 return ItunesConnectClient.from_json(stored_client.itc_client)
             return ItunesConnectClient()
         except Exception as exc:
@@ -69,31 +75,30 @@ class ItunesConnectPlugin(CorePluginMixin, Plugin):
         )
         client.itc_client = {}
         if full_reset:
-            client.teams = {}
+            client.apps = {}
             client.apps_to_sync = {}
         client.save()
 
-    def store_client(self, project, client):
+    def store_client(self, project, api_client):
         itc_client, _ = Client.objects.get_or_create(
             project=project
         )
-        itc_client.itc_client = client.to_json(ensure_user_details=False)
+        itc_client.itc_client = api_client.to_json(ensure_user_details=False)
         itc_client.save()
         return itc_client
 
     def get_project_urls(self):
         return [
             (r'^test-config/', ItunesConnectTestConfigEndpoint.as_view(plugin=self)),
-            (r'^sync-app/', ItunesConnectAppSyncEndpoint.as_view(plugin=self)),
-            (r'^securitycode/', ItunesConnectSecurityEndpoint.as_view(plugin=self)),
+            (r'^sync-app/', ItunesConnectAppSyncEndpoint.as_view(plugin=self))
         ]
 
-    def login(self, project, client):
-        client.login(
+    def login(self, project, api_client):
+        api_client.login(
             email=self.get_option('email', project),
             password=self.get_option('password', project)
         )
-        return client
+        return api_client
 
     def get_config(self, project, **kwargs):
         password = self.get_option('password', project)

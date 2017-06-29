@@ -30,16 +30,18 @@ class ItcError(Exception):
 class ItunesConnectClient(object):
 
     def __init__(self):
+        self._reset()
+
+    def _reset(self):
         self._session = SafeSession()
         self._service_key = None
         self._user_details = None
-        self._current_team = None
         self._scnt = None
         self._session_id = None
-        self.two_fa_request = None
         self.authenticated = False
-        self.two_fa_done = False
-        self.first_login_attempt = False
+
+    def logout(self):
+        self._reset()
 
     def login(self, email=None, password=None):
         if email is None or password is None:
@@ -59,27 +61,26 @@ class ItunesConnectClient(object):
             'X-Requested-With': 'XMLHttpRequest',
             'X-Apple-Widget-Key': self._service_key
         })
-        # TODO possibly add cookie header see https://github.com/fastlane/fastlane/blob/master/spaceship/lib/spaceship/client.rb#L452
 
         self._session_id = rv.headers.get('X-Apple-Id-Session-Id', None)
         self._scnt = rv.headers.get('scnt', None)
 
-        if rv.headers.get('X-Apple-TwoSV-Trust-Eligible'):
-            self.two_fa_request = True
-        else:
-            self.two_fa_request = False
-            # This is necessary because it sets some further cookies
-            self.refresh_user_details()
+        # This is necessary because it sets some further cookies
+        rv = self._session.get(urljoin(API_BASE, 'wa'))
+        rv.raise_for_status()
 
         # If we reach this we are authenticated
-        if (self.two_fa_request is False or self.two_fa_done):
-            self.authenticated = True
+        self.authenticated = True
 
-        if self.two_fa_request is False:
-            self.first_login_attempt = True
-
-    def needs_two_fa(self):
-        return self.two_fa_request
+    def _get_service_key(self):
+        if self._service_key is not None:
+            return self._service_key
+        rv = self._session.get(ISK_JS_URL)
+        match = _isk_re.search(rv.text)
+        if match is not None:
+            self._service_key = match.group(1)
+            return self._service_key
+        raise ItcError('Could not find service key')
 
     def _get_itc_service_key(self):
         rv = self._session.get(ITC_SERVICE_KEY_URL)
@@ -95,17 +96,6 @@ class ItunesConnectClient(object):
             'X-Apple-Id-Session-Id': self._session_id,
             'scnt': self._scnt
         }
-
-    def two_factor(self, security_code):
-        rv = self._session.post(TWOFA_URL, json={
-            'securityCode': {'code': security_code},
-        }, headers=self._request_headers())
-        rv.raise_for_status()
-        if rv.status_code == 204:
-            rv = self._session.get(TRUST_URL, headers=self._request_headers())
-        rv.raise_for_status()
-        self.two_fa_done = True
-        self.authenticated = True
 
     @classmethod
     def from_json(cls, data):
@@ -124,14 +114,6 @@ class ItunesConnectClient(object):
         if val is not None:
             rv._scnt = val
 
-        val = data.get('two_fa_request')
-        if val is not None:
-            rv.two_fa_request = val
-
-        val = data.get('two_fa_done')
-        if val is not None:
-            rv.two_fa_done = val
-
         val = data.get('authenticated')
         if val is not None:
             rv.authenticated = val
@@ -148,8 +130,6 @@ class ItunesConnectClient(object):
             'service_key': self._service_key,
             'scnt': self._scnt,
             'session_id': self._session_id,
-            'two_fa_request': self.two_fa_request,
-            'two_fa_done': self.two_fa_done,
             'authenticated': self.authenticated,
             'cookies': dict_from_cookiejar(self._session.cookies),
         }
@@ -164,57 +144,28 @@ class ItunesConnectClient(object):
 
     def refresh_user_details(self):
         """Refreshes the user details."""
-
-        teams = []
-        apps = []
-
-        rv = self._session.get(OLYMPUS_SESSION_URL)
+        rv = self._session.get(USER_DETAILS_URL, headers=self._request_headers())
         rv.raise_for_status()
-        data = rv.json()
-
-        rv_user = self._session.get(USER_DETAILS_URL)
-        rv_user.raise_for_status()
-        data_user = rv_user.json()['data']
-
-        for acnt in data['availableProviders']:
-            team_id = acnt['providerId']
-            apps.append(self._list_apps(team_id, data_user['sessionToken']['dsId']))
-
-        for app in apps:
-            for acnt in data['availableProviders']:
-                team_id = acnt['providerId']
-                if team_id == app[0]:
-                    teams.append({
-                        'id': team_id,
-                        'name': acnt['name'],
-                        'apps': app[1],
-                    })
+        data = rv.json()['data']
 
         self._user_details = {
-            'teams': teams,
+            'apps': self._list_apps(),
             'session': {
-                'ds_id': data_user['sessionToken']['dsId']
+                'ds_id': data['sessionToken']['dsId']
             },
-            'email': data['user']['emailAddress'],
-            'name': data['user']['fullName'],
-            'user_id': data['user']['prsId'],
+            'email': data['userName'],
+            'name': data['displayName'],
+            'user_id': data['userId'],
         }
 
     def iter_apps(self):
         """Iterates over all apps the user has access to."""
-        seen = set()
-        for team in self.get_user_details()['teams']:
-            for app in team['apps']:
-                if app['id'] not in seen:
-                    seen.add(app['id'])
-                    yield app
+        return self.get_user_details()['apps']
 
-    def iter_app_builds(self, app, team_id):
+    def iter_app_builds(self, app):
         """Given an app ID, this iterates over all the builds that exist
         for it.
         """
-        self._select_team(team_id)
-
         for platform in app['platforms']:
             rv = self._session.get(urljoin(
                 API_BASE, 'ra/apps/%s/buildHistory?platform=%s' % (
@@ -249,42 +200,15 @@ class ItunesConnectClient(object):
         rv.raise_for_status()
         return rv.json().get('data', {}).get('items', [])
 
-    def get_dsym_url(self, app_id, team_id, platform, version, build_id):
+    def get_dsym_url(self, app_id, platform, version, build_id):
         """Looks up the dsym URL for a given build"""
-        self._select_team(team_id)
         rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/%s/platforms/%s/trains/%s/builds/%s/details' % (
                 app_id, platform, version, build_id)))
         rv.raise_for_status()
         return rv.json()['data']['dsymurl']
 
-    def _get_service_key(self):
-        if self._service_key is not None:
-            return self._service_key
-        rv = self._session.get(ISK_JS_URL)
-        match = _isk_re.search(rv.text)
-        if match is not None:
-            self._service_key = match.group(1)
-            return self._service_key
-        raise ItcError('Could not find service key')
-
-    def _select_team(self, team_id, ds_id=None):
-        if self._current_team == team_id:
-            return
-        if ds_id is None:
-            ds_id = self.get_user_details()['session']['ds_id']
-
-        rv = self._session.post(urljoin(
-            API_BASE, 'ra/v1/session/webSession'), json={
-            'contentProviderId': team_id,
-            'dsId': ds_id,
-        })
-        rv.raise_for_status()
-        self._current_team = rv.json()['data']['contentProviderId']
-
-    def _list_apps(self, team_id, ds_id=None):
-        self._select_team(team_id, ds_id)
-
+    def _list_apps(self):
         rv = self._session.get(urljoin(
             API_BASE, 'ra/apps/manageyourapps/summary/v2'))
         rv.raise_for_status()
@@ -304,7 +228,7 @@ class ItunesConnectClient(object):
                 'platforms': sorted(platforms),
             })
 
-        return (self._current_team, rv)
+        return rv
 
     def close(self):
         self._session.close()

@@ -12,7 +12,7 @@ class Migration(SchemaMigration):
         db.create_table(u'itunesconnect_client', (
             (u'id', self.gf('django.db.models.fields.AutoField')(primary_key=True)),
             ('project', self.gf('sentry.db.models.fields.foreignkey.FlexibleForeignKey')(to=orm['sentry.Project'], unique=True)),
-            ('teams', self.gf('sentry.db.models.fields.encrypted.EncryptedJsonField')(default={})),
+            ('apps', self.gf('sentry.db.models.fields.encrypted.EncryptedJsonField')(default={})),
             ('itc_client', self.gf('sentry.db.models.fields.encrypted.EncryptedJsonField')(default={})),
             ('apps_to_sync', self.gf('jsonfield.fields.JSONField')(default={})),
             ('last_updated', self.gf('django.db.models.fields.DateTimeField')(default=datetime.datetime.now)),
@@ -28,12 +28,12 @@ class Migration(SchemaMigration):
     models = {
         'itunesconnect.client': {
             'Meta': {'object_name': 'Client'},
+            'apps': ('sentry.db.models.fields.encrypted.EncryptedJsonField', [], {'default': '{}'}),
             'apps_to_sync': ('jsonfield.fields.JSONField', [], {'default': '{}'}),
             u'id': ('django.db.models.fields.AutoField', [], {'primary_key': 'True'}),
             'itc_client': ('sentry.db.models.fields.encrypted.EncryptedJsonField', [], {'default': '{}'}),
             'last_updated': ('django.db.models.fields.DateTimeField', [], {'default': 'datetime.datetime.now'}),
-            'project': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Project']", 'unique': 'True'}),
-            'teams': ('sentry.db.models.fields.encrypted.EncryptedJsonField', [], {'default': '{}'})
+            'project': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Project']", 'unique': 'True'})
         },
         'sentry.organization': {
             'Meta': {'object_name': 'Organization'},
@@ -76,6 +76,7 @@ class Migration(SchemaMigration):
             'id': ('sentry.db.models.fields.bounded.BoundedBigAutoField', [], {'primary_key': 'True'}),
             'name': ('django.db.models.fields.CharField', [], {'max_length': '200'}),
             'organization': ('sentry.db.models.fields.foreignkey.FlexibleForeignKey', [], {'to': "orm['sentry.Organization']"}),
+            'platform': ('django.db.models.fields.CharField', [], {'max_length': '64', 'null': 'True'}),
             'public': ('django.db.models.fields.BooleanField', [], {'default': 'False'}),
             'slug': ('django.db.models.fields.SlugField', [], {'max_length': '50', 'null': 'True'}),
             'status': ('sentry.db.models.fields.bounded.BoundedPositiveIntegerField', [], {'default': '0', 'db_index': 'True'}),

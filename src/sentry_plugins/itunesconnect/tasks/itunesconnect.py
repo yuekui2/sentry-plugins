@@ -9,10 +9,9 @@ from requests.exceptions import HTTPError
 from sentry import http
 from sentry.tasks.base import instrumented_task
 from sentry.models import (
-    Project, ProjectOption, create_files_from_macho_zip, VersionDSymFile,
+    Project, ProjectOption, VersionDSymFile, create_files_from_dsym_zip,
     DSymApp, DSymPlatform
 )
-from ..models import Client
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +29,6 @@ def get_itunes_connect_plugin(project):
         if plugin.slug == 'itunesconnect':
             return plugin
     return None
-
-
-def get_client(plugin, project):
-    itc = plugin.get_client(project)
-    if itc.two_fa_done or itc.two_fa_request is False:
-        itc = plugin.login(project=project, client=itc)
-    return itc
 
 
 @instrumented_task(name='sentry.tasks.sync_dsyms_from_itunes_connect',
@@ -65,30 +57,27 @@ def sync_dsyms_from_itunes_connect(**kwargs):
             return
 
         try:
-            itc_client = Client.objects.filter(
-                project=project
-            ).first()
+            client = plugin.get_client(project=project)
 
-            if itc_client is None or \
-               len(itc_client.apps_to_sync) == 0 or \
-               len(itc_client.itc_client) == 0:
+            if client is None or \
+               len(client.apps_to_sync) == 0 or \
+               len(client.itc_client) == 0:
                 logger.warning('Initial sync not done yet')
                 return
 
-            itc = get_client(plugin=plugin, project=project)
+            api_client = plugin.get_api_client(project=project)
 
-            for team in itc_client.teams:
-                for app in team.get('apps', []):
-                    if itc_client.is_app_active(app.get('id', None)):
-                        DSymApp.objects.create_or_update_app(
-                            sync_id=app['id'],
-                            app_id=app['bundle_id'],
-                            project=project,
-                            data=app,
-                            platform=DSymPlatform.APPLE,
-                        )
-                        for build in itc.iter_app_builds(app, team['id']):
-                            fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build, team_id=team['id'])
+            for app in client.apps:
+                if client.is_app_active(app.get('id', None)):
+                    DSymApp.objects.create_or_update_app(
+                        sync_id=app['id'],
+                        app_id=app['bundle_id'],
+                        project=project,
+                        data=app,
+                        platform=DSymPlatform.APPLE,
+                    )
+                    for build in api_client.iter_app_builds(app):
+                        fetch_dsym_url.delay(project_id=opt.project_id, app=app, build=build)
         except Exception as error:
             if isinstance(error, HTTPError):
                 if error.response.status_code == 401:
@@ -101,7 +90,7 @@ def sync_dsyms_from_itunes_connect(**kwargs):
 @instrumented_task(
     name='sentry.tasks.fetch_dsym_url',
     queue='itunesconnect')
-def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
+def fetch_dsym_url(project_id, app, build, **kwargs):
     project = get_project_from_id(project_id)
     plugin = get_itunes_connect_plugin(project)
 
@@ -113,7 +102,7 @@ def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
     if not plugin.is_enabled(project):
         return
 
-    itc = get_client(plugin=plugin, project=project)
+    api_client = plugin.get_api_client(project=project)
 
     dsym_app = DSymApp.objects.filter(
         sync_id=app['id']
@@ -131,9 +120,8 @@ def fetch_dsym_url(project_id, app, build, team_id, **kwargs):
     if dsym_files:
         return  # we bail out here because we synced this already
 
-    url = itc.get_dsym_url(
+    url = api_client.get_dsym_url(
         app['id'],
-        team_id,
         build['platform'],
         build['version'],
         build['build_id']
@@ -165,7 +153,7 @@ def download_dsym(project_id, url, build, dsym_app_id, **kwargs):
             verify_ssl=True,
         )
         temp.seek(0)
-        dsym_project_files = create_files_from_macho_zip(temp, project=project)
+        dsym_project_files = create_files_from_dsym_zip(temp, project=project)
         for dsym_project_file in dsym_project_files:
             try:
                 VersionDSymFile.objects.create(

@@ -1,21 +1,35 @@
 import React from 'react';
-import {i18n, IndicatorStore, plugins, Switch, NumberConfirm} from 'sentry';
+import {i18n, IndicatorStore, plugins, Switch} from 'sentry';
 
 class Settings extends plugins.BasePlugin.DefaultSettings {
   constructor(props) {
     super(props);
 
     this.testConfig = this.testConfig.bind(this);
+    this.handleLoading = this.handleLoading.bind(this);
+    this.finishedLoading = this.finishedLoading.bind(this);
     this.fetchData = this.fetchData.bind(this);
-    this.sendAuthCode = this.sendAuthCode.bind(this);
 
     Object.assign(this.state, {
-      testing: false,
-      showNumberConfirm: false,
-      twoFARequest: false,
-      appActivating: false,
-      twoFactorEnabled: false,
+      loading: false,
       sessionExpired: false
+    });
+  }
+
+  handleLoading() {
+    if (this.state.loading !== false) {
+      return true;
+    }
+    this.setState({
+      loading: true,
+    });
+    return false;
+  }
+
+  finishedLoading(loadingIndicator) {
+    if (loadingIndicator) IndicatorStore.remove(loadingIndicator);
+    this.setState({
+      loading: false,
     });
   }
 
@@ -25,75 +39,37 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
       success: (data) => {
         this.setState({
           testResults: data,
-          twoFactorEnabled: data.twoFactorEnabled,
           sessionExpired: data.sessionExpired
         });
       }
     });
   }
 
-  sendAuthCode(code) {
-    this.setState({
-      showNumberConfirm: false,
-    });
-    this.api.request(`${this.getPluginEndpoint()}securitycode/`, {
-      method: 'POST',
-      data: {
-        securitycode: code,
-      },
-      success: (data) => {
-        this.testConfig();
-      }
-    });
-  }
-
   testConfig() {
-    if (this.state.testing !== false) {
-      return;
-    }
-    this.setState({
-      testing: true,
-    });
+    if (this.handleLoading()) return;
     let loadingIndicator = IndicatorStore.add(i18n.t('Syncing account...'));
+
     this.api.request(`${this.getPluginEndpoint()}test-config/`, {
       method: 'POST',
       success: (data) => {
-        if (data.twoFARequest) {
-          this.setState({
-            showNumberConfirm: true,
-          });
-        } else {
-          this.setState({
-            testResults: data,
-            twoFactorEnabled: data.twoFactorEnabled,
-            sessionExpired: data.sessionExpired
-          });
-        }
+        this.setState({
+          testResults: data
+        });
       },
       error: (error) => {
         this.setState({
           testResults: {
             error: true,
-            message: 'An unknown error occurred while testing this integration.',
+            message: 'An unknown error occurred while loading this integration.',
           },
         });
       },
-      complete: () => {
-        IndicatorStore.remove(loadingIndicator);
-        this.setState({
-          testing: false,
-        });
-      }
+      complete: () => this.finishedLoading(loadingIndicator)
     });
   }
 
   activateApp(appID) {
-    if (this.state.appActivating) {
-      return;
-    }
-    this.setState({
-      appActivating: true,
-    });
+    if (this.handleLoading()) return;
 
     this.api.request(`${this.getPluginEndpoint()}sync-app/`, {
       method: 'POST',
@@ -105,79 +81,39 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
           testResults: data,
         });
       },
-      complete: () => {
-        this.setState({
-          appActivating: false,
-        });
-      }
+      complete: () => this.finishedLoading()
     });
   }
 
-  renderTeam(team) {
+  renderApp(app) {
     return (
-      <li className="group" key={team.id}>
-        <div className="row">
-          <div className="col-xs-12 event-details">
-            <h3 className="truncate">{team.name}</h3>
-            <div className="event-message" />
-            <div className="event-extra">
-              <ul>
-                <li>
-                  ID: {team.id}
-                </li>
-              </ul>
+      <li className="group" key={app.id}>
+          <div className="row" key={app.id}>
+            <div className="col-xs-8 event-details">
+              <div className="event-message">
+                <div className="app-icon" style={app.icon_url && {backgroundImage: `url(${app.icon_url})`}} />
+                {app.name}
+              </div>
+              <div className="event-extra">
+                <ul>
+                  <li>
+                    {app.bundle_id}
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div className="col-xs-4 event-details">
+              <div className="event-message">
+                <span className="align-right pull-right" style={{paddingRight: 16}}>
+                  <Switch size="lg"
+                    isActive={app.active}
+                    isLoading={this.state.loading}
+                    toggle={this.activateApp.bind(this, app.id)} />
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-        {team.apps.map((app) => {
-          return (
-            <div className="row" key={app.id}>
-              <div className="col-xs-8 event-details">
-                <div className="event-message">
-                  <div className="app-icon" style={app.icon_url && {backgroundImage: `url(${app.icon_url})`}} />
-                  {app.name}
-                </div>
-                <div className="event-extra">
-                  <ul>
-                    <li>
-                      {app.bundle_id}
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div className="col-xs-4 event-details">
-                <div className="event-message">
-                  <span className="align-right pull-right" style={{paddingRight: 16}}>
-                    <Switch size="lg"
-                      isActive={app.active}
-                      isLoading={this.state.appActivating}
-                      toggle={this.activateApp.bind(this, app.id)} />
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
       </li>
-    );
-  }
-
-  render2FAInfo() {
-    if (!this.state.twoFactorEnabled) {
-      return null;
-    }
-    return (
-      <div className="row">
-        <div className="col-md-12">
-          <div className="alert alert-block alert-info">
-            Your account is using <strong>Two-Factor-Authententication</strong>.<br/>
-            It is recommend that you create a seperate user for syncing you debug
-            symbols.<br/>Sessions to iTunes Connect with Two-Factor-Authententication
-            enabled only last about 30 days.<br/>After that period of time you must
-            login again.
-          </div>
-        </div>
-      </div>
     );
   }
 
@@ -197,25 +133,27 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
     );
   }
 
-  renderUserDetails() {
+  renderContent() {
     if (!this.props.plugin.enabled) {
       return null;
     }
     let hasResult = false;
-    if (this.state.testResults && this.state.testResults.result) {
+    if (this.state.testResults && this.state.testResults.result &&
+      this.state.testResults.result.apps.length > 0) {
       hasResult = true;
     }
+
     return (
       <div className="box dashboard-widget">
         <div className="box-header clearfix">
           <div className="row">
             <div className="col-xs-8">
-              <h3>{i18n.t('Team')}</h3>
+              <h3>{i18n.t('Apps')}</h3>
             </div>
             <div className="col-xs-4">
               <a className="pull-right btn btn-default btn-sm"
                 onClick={this.testConfig}
-                disabled={this.state.testing}>
+                disabled={this.state.loading}>
                 {i18n.t('Sync Account')}
               </a>
             </div>
@@ -225,8 +163,8 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
           <div className="tab-pane active">
               {hasResult &&
                 <ul className="group-list group-list-small">
-                  {this.state.testResults.result.map((team) => {
-                      return this.renderTeam(team);
+                  {this.state.testResults.result.apps.map((app) => {
+                    return this.renderApp(app);
                   })}
                 </ul>
               }
@@ -239,13 +177,9 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   render() {
     return (
       <div>
-        <NumberConfirm digits={6}
-          show={this.state.showNumberConfirm}
-          onFinished={this.sendAuthCode} />
         <div className="ref-itunesconnect-settings">
           {this.props.children}
         </div>
-        {this.render2FAInfo()}
         {this.renderSessionExpired()}
         {this.state.testResults &&
           <div className="ref-itunesconnect-test-results">
@@ -257,7 +191,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
             }
           </div>
         }
-        {this.renderUserDetails()}
+        {this.renderContent()}
       </div>
     );
   }
