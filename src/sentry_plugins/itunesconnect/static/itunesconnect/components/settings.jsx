@@ -5,7 +5,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   constructor(props) {
     super(props);
 
-    this.testConfig = this.testConfig.bind(this);
+    this.syncAccount = this.syncAccount.bind(this);
     this.handleLoading = this.handleLoading.bind(this);
     this.finishedLoading = this.finishedLoading.bind(this);
     this.fetchData = this.fetchData.bind(this);
@@ -41,11 +41,12 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
           testResults: data,
           sessionExpired: data.sessionExpired
         });
+        this.syncAccount();
       }
     });
   }
 
-  testConfig() {
+  syncAccount() {
     if (this.handleLoading()) return;
     let loadingIndicator = IndicatorStore.add(i18n.t('Syncing account...'));
 
@@ -150,12 +151,8 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
             <div className="col-xs-8">
               <h3>{i18n.t('Apps')}</h3>
             </div>
-            <div className="col-xs-4">
-              <a className="pull-right btn btn-default btn-sm"
-                onClick={this.testConfig}
-                disabled={this.state.loading}>
-                {i18n.t('Sync Account')}
-              </a>
+            <div className="col-xs-4 text-right">
+              <h3 style={{maxWidth: '100%'}}>{i18n.t('Sync App')}</h3>
             </div>
           </div>
         </div>
