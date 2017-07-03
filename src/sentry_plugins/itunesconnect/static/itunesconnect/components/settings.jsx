@@ -34,6 +34,7 @@ class Settings extends plugins.BasePlugin.DefaultSettings {
   }
 
   fetchData() {
+    if (this.props.plugin.enabled === false) return;
     super.fetchData();
     this.api.request(`${this.getPluginEndpoint()}test-config/`, {
       success: (data) => {

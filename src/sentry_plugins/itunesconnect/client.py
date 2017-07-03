@@ -13,12 +13,6 @@ USER_DETAILS_URL = urljoin(API_BASE, 'ra/user/detail')
 
 APPLEID_BASE_URL = 'https://idmsa.apple.com/'
 LOGIN_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/signin')
-TWOFA_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/verify/trusteddevice/securitycode')
-TRUST_URL = urljoin(APPLEID_BASE_URL, 'appleauth/auth/2sv/trust')
-
-OLYMPUS_BASE_URL = 'https://olympus.itunes.apple.com/'
-ITC_SERVICE_KEY_URL = urljoin(OLYMPUS_BASE_URL, '/v1/app/config?hostname=itunesconnect.apple.compile')
-OLYMPUS_SESSION_URL = urljoin(OLYMPUS_BASE_URL, '/v1/session')
 
 _isk_re = re.compile(r'itcServiceKey\s+=\s+["\'](.*)["\']')
 
@@ -81,12 +75,6 @@ class ItunesConnectClient(object):
             self._service_key = match.group(1)
             return self._service_key
         raise ItcError('Could not find service key')
-
-    def _get_itc_service_key(self):
-        rv = self._session.get(ITC_SERVICE_KEY_URL)
-        rv.raise_for_status()
-        data = rv.json()['data']
-        self._service_key = data['authServiceKey']
 
     def _request_headers(self):
         return {
