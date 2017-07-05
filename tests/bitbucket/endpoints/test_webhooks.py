@@ -16,7 +16,7 @@ BITBUCKET_IP = '104.192.143.10'
 class UtilityFunctionTest(TestCase):
     def test_parse_raw_user_email(self):
         assert parse_raw_user_email('Max Bittker <max@getsentry.com>') == 'max@getsentry.com'
-   
+
     def parse_raw_user_name(self):
         assert parse_raw_user_name('Max Bittker <max@getsentry.com>') == 'Max Bittker'
 

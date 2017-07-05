@@ -35,9 +35,11 @@ def parse_raw_user_email(raw):
     # captures content between angle brackets
     return re.search('(?<=<).*(?=>$)', raw).group(0)
 
+
 def parse_raw_user_name(raw):
     # captures content before angle bracket
     return raw.split('<')[0].strip()
+
 
 class PushEventWebhook(Webhook):
     # https://confluence.atlassian.com/bitbucket/event-payloads-740262817.html#EventPayloads-Push
