@@ -6,7 +6,7 @@ import six
 from datetime import datetime
 from django.utils import timezone
 from sentry.models import (
-    Commit, CommitAuthor, Installation, OrganizationOption, Repository
+    Commit, CommitAuthor, Integration, OrganizationOption, Repository
 )
 from sentry.testutils import APITestCase
 from uuid import uuid4
@@ -209,14 +209,13 @@ class InstallationPushEventWebhookTest(APITestCase):
 
         url = '/plugins/github/installations/webhook/'
 
-        inst = Installation.objects.create(
-            provider='github',
-            installation_id='12345',
-            external_id='987612345',
-            external_organization='dummyorg',
+        inst = Integration.objects.create(
+            provider='github_apps',
+            external_id='12345',
+            name='dummyorg',
         )
 
-        inst.add_organization(self.project.organization)
+        inst.add_organization(self.project.organization.id)
 
         Repository.objects.create(
             organization_id=project.organization.id,
@@ -276,11 +275,10 @@ class InstallationInstallEventWebhookTest(APITestCase):
 
         assert response.status_code == 204
 
-        assert Installation.objects.filter(
-            provider='github',
-            installation_id=2,
-            external_id=1,
-            external_organization='octocat',
+        assert Integration.objects.filter(
+            provider='github_apps',
+            external_id=2,
+            name='octocat',
         ).exists()
 
 
@@ -290,14 +288,13 @@ class InstallationRepoInstallEventWebhookTest(APITestCase):
 
         url = '/plugins/github/installations/webhook/'
 
-        inst = Installation.objects.create(
-            provider='github',
-            installation_id='2',
-            external_id='1',
-            external_organization='octocat',
+        integration = Integration.objects.create(
+            provider='github_apps',
+            external_id='2',
+            name='octocat',
         )
 
-        inst.add_organization(project.organization)
+        integration.add_organization(project.organization.id)
 
         response = self.client.post(
             path=url,

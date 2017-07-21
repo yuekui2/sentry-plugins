@@ -161,7 +161,7 @@ class GitHubClient(GitHubClientBase):
         return self._request('GET', '/user/installations', headers=headers, params=params)
 
 
-class GitHubIntegrationClient(GitHubClientBase):
+class GitHubAppsClient(GitHubClientBase):
     url = 'https://api.github.com'
 
     def __init__(self, installation):

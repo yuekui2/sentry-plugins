@@ -11,7 +11,7 @@ from social_auth.models import UserSocialAuth
 from sentry import options
 from sentry.app import locks
 from sentry.exceptions import InvalidIdentity, PluginError
-from sentry.models import Installation, OrganizationOption
+from sentry.models import Integration, OrganizationOption
 from sentry.plugins.bases.issue2 import IssuePlugin2, IssueGroupActionEndpoint
 from sentry.plugins import providers
 from sentry.utils.http import absolute_uri
@@ -19,7 +19,7 @@ from sentry.utils.http import absolute_uri
 from sentry_plugins.base import CorePluginMixin
 from sentry_plugins.exceptions import ApiError, ApiUnauthorized
 
-from .client import GitHubClient, GitHubIntegrationClient
+from .client import GitHubClient, GitHubAppsClient
 
 ERR_INTERNAL = (
     'An internal error occurred with the integration and the Sentry team has'
@@ -249,24 +249,6 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
     has_installations = True
     logger = logging.getLogger('sentry.plugins.github')
 
-    def get_install_url(self):
-        return options.get('plugins.github.apps-install-url')
-
-    def needs_auth(self, user, **kwargs):
-        """
-        Return ``True`` if the authenticated user needs to associate an auth
-        service before performing actions with this provider.
-        """
-        for_installation = kwargs.get('for_installation', False)
-
-        if not user.is_authenticated():
-            return True
-
-        return not UserSocialAuth.objects.filter(
-            user=user,
-            provider=self.installation_auth_provider if for_installation else self.auth_provider,
-        ).exists()
-
     def get_config(self):
         return [{
             'name': 'name',
@@ -347,10 +329,6 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         if actor is None:
             raise NotImplementedError('Cannot delete a repository anonymously')
 
-        # there isn't a webhook to delete for integrations
-        if not repo.config.get('webhook_id') and repo.config.get('installation_id'):
-            return
-
         client = self.get_client(actor)
         try:
             client.delete_hook(repo.config['name'], repo.config['webhook_id'])
@@ -371,13 +349,58 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
     def compare_commits(self, repo, start_sha, end_sha, actor=None):
         installation_id = repo.config.get('installation_id')
         if installation_id:
-            client = GitHubIntegrationClient(
-                Installation.objects.get(installation_id=installation_id),
+            client = GitHubAppsClient(
+                Integration.objects.get(installation_id=installation_id),
             )
         elif actor is not None:
             client = self.get_client(actor)
         else:
             raise NotImplementedError('Cannot fetch commits anonymously')
+
+        # use config name because that is kept in sync via webhooks
+        name = repo.config['name']
+        if start_sha is None:
+            try:
+                res = client.get_last_commits(name, end_sha)
+            except Exception as e:
+                self.raise_error(e)
+            else:
+                return self._format_commits(repo, res[:10])
+        else:
+            try:
+                res = client.compare_commits(name, start_sha, end_sha)
+            except Exception as e:
+                self.raise_error(e)
+            else:
+                return self._format_commits(repo, res['commits'])
+
+
+class GitHubAppsRepositoryProvider(GitHubRepositoryProvider):
+    name = 'GitHub Apps'
+    auth_provider = 'github_apps'
+    logger = logging.getLogger('sentry.plugins.github_apps')
+
+    def get_install_url(self):
+        return options.get('plugins.github.apps-install-url')
+
+    def delete_repository(self, repo, actor=None):
+        if actor is None:
+            raise NotImplementedError('Cannot delete a repository anonymously')
+
+        # there isn't a webhook to delete for integrations
+        if not repo.config.get('webhook_id') and repo.config.get('installation_id'):
+            return
+
+        return super(GitHubAppsRepositoryProvider, self).delete_repository(repo, actor=actor)
+
+    def compare_commits(self, repo, start_sha, end_sha, actor=None):
+        integration_id = repo.integration_id
+        if integration_id is not None:
+            client = GitHubAppsClient(
+                Integration.objects.get(id=integration_id),
+            )
+        else:
+            raise NotImplementedError('GitHub apps requires an integration id to fetch commits')
 
         # use config name because that is kept in sync via webhooks
         name = repo.config['name']
@@ -427,7 +450,7 @@ class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
         } for install in res['installations']]
 
     def get_repositories(self, installation):
-        client = GitHubIntegrationClient(installation)
+        client = GitHubAppsClient(installation)
 
         res = client.get_repositories()
         return [{

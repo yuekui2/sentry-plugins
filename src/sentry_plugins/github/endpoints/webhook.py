@@ -16,7 +16,7 @@ from django.utils import timezone
 from simplejson import JSONDecodeError
 from sentry import options
 from sentry.models import (
-    Commit, CommitAuthor, CommitFileChange, Installation,
+    Commit, CommitAuthor, CommitFileChange, Integration,
     Organization, OrganizationOption, Repository, User
 )
 from sentry.plugins.providers import RepositoryProvider
@@ -50,11 +50,10 @@ class InstallationEventWebhook(Webhook):
         if action == 'created':
             try:
                 with transaction.atomic():
-                    Installation.objects.create(
-                        provider='github',
-                        installation_id=installation['id'],
-                        external_organization=installation['account']['login'],
-                        external_id=installation['account']['id'],
+                    Integration.objects.create(
+                        provider='github_apps',
+                        external_id=installation['id'],
+                        name=installation['account']['login'],
                     )
             except IntegrityError:
                 pass
@@ -65,16 +64,18 @@ class InstallationRepositoryEventWebhook(Webhook):
     def __call__(self, event, organization=None):
         installation = event['installation']
 
-        inst = Installation.objects.get(installation_id=installation['id'])
+        integration = Integration.objects.get(
+            external_id=installation['id'],
+            provider='github_apps',
+        )
 
         repos_added = event['repositories_added']
 
         if repos_added:
-            for org_id in inst.organizations.values_list('id', flat=True):
+            for org_id in integration.organizations.values_list('id', flat=True):
                 for r in repos_added:
                     config = {
                         'name': r['full_name'],
-                        'installation_id': inst.installation_id,
                     }
                     repo, created = Repository.objects.get_or_create(
                         organization_id=org_id,
@@ -84,10 +85,12 @@ class InstallationRepositoryEventWebhook(Webhook):
                         defaults={
                             'url': 'https://github.com/%s' % (r['full_name'],),
                             'config': config,
+                            'integration_id': integration.id,
                         }
                     )
                     if not created:
                         repo.config.update(config)
+                        repo.integration_id = integration.id
                         repo.save()
         # TODO(jess): what do we want to do when they're removed?
         # maybe signify that we've lost access but not deleted?
@@ -254,11 +257,13 @@ class PushEventWebhook(Webhook):
         if organization is None:
             if 'installation' not in event:
                 return
-            inst = Installation.objects.get(
-                installation_id=event['installation']['id'],
-                provider='github',
+
+            print event['installation']['id']
+            integration = Integration.objects.get(
+                external_id=event['installation']['id'],
+                provider='github_apps',
             )
-            organizations = list(inst.organizations.all())
+            organizations = list(integration.organizations.all())
         else:
             organizations = [organization]
 
