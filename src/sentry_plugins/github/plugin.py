@@ -240,6 +240,7 @@ class GitHubPlugin(CorePluginMixin, GitHubMixin, IssuePlugin2):
 
     def setup(self, bindings):
         bindings.add('repository.provider', GitHubRepositoryProvider, id='github')
+        bindings.add('repository.provider', GitHubAppsRepositoryProvider, id='github_apps')
 
 
 class GitHubRepositoryProvider(GitHubMixin, providers.RepositoryProvider):
@@ -383,6 +384,46 @@ class GitHubAppsRepositoryProvider(GitHubRepositoryProvider):
     def get_install_url(self):
         return options.get('plugins.github.apps-install-url')
 
+    def get_available_auths(self, user, organization, integrations, social_auths, **kwargs):
+        allowed_gh_installations = set(self.get_installations(user))
+        linked_integrations = {i.id for i in integrations}
+
+        _integrations = list(Integration.objects.filter(
+            external_id__in=allowed_gh_installations,
+        ))
+
+        # add in integrations that might have been set up for org
+        # by users w diff permissions
+        _integrations.extend([
+            i for i in integrations if i.external_id not in allowed_gh_installations
+        ])
+
+        return [{
+            'defaultAuthId': None,
+            'user': None,
+            'externalId': i.external_id,
+            'integrationId': six.text_type(i.id),
+            'linked': i.id in linked_integrations,
+        } for i in _integrations]
+
+    def link_auth(self, user, organization, data):
+        integration_id = data['integration_id']
+
+        try:
+            integration = Integration.objects.get(
+                provider=self.auth_provider,
+                id=integration_id,
+            )
+        except Integration.DoesNotExist:
+            raise PluginError('Invalid integration id')
+
+        # check that user actually has access to add
+        allowed_gh_installations = set(self.get_installations(user))
+        if int(integration.external_id) not in allowed_gh_installations:
+            raise PluginError('You do not have access to that integration')
+
+        integration.add_organization(organization.id)
+
     def delete_repository(self, repo, actor=None):
         if actor is None:
             raise NotImplementedError('Cannot delete a repository anonymously')
@@ -435,19 +476,7 @@ class GitHubAppsRepositoryProvider(GitHubRepositoryProvider):
 
         res = client.get_installations()
 
-        # TODO(jess): this is confusing because there are
-        # many id fields but i think this is accurate:
-        # `target_id`: id of org/user
-        # `id`: the specific id of the specific installation
-        # `app_id`: the id of the integration (replaces deprecated
-        # `integration_id`)
-
-        return [{
-            'app_id': install['app_id'],
-            'installation_id': install['id'],
-            'external_id': install['target_id'],
-            'external_slug': install['account']['login'],
-        } for install in res['installations']]
+        return [install['id'] for install in res['installations']]
 
     def get_repositories(self, installation):
         client = GitHubAppsClient(installation)
