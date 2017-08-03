@@ -6,9 +6,13 @@ from sentry.utils.http import absolute_uri
 
 from sentry_plugins.exceptions import ApiError
 
+import os
+
 # https://v2.developer.pagerduty.com/docs/events-api
-INTEGRATION_API_URL = \
+default_pagerduty_api_url = \
     'https://events.pagerduty.com/generic/2010-04-15/create_event.json'
+
+INTEGRATION_API_URL = os.getenv('PAGERDUTY_API_URL', default_pagerduty_api_url)
 
 
 class PagerDutyClient(object):
